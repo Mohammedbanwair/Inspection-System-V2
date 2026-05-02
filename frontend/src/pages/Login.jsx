@@ -88,14 +88,6 @@ export default function Login() {
                   data-testid="login-submit-button">
             {submitting ? t("login_submitting") : t("login_submit")}
           </button>
-
-          <div className="mt-8 text-xs text-slate-500 leading-relaxed border-t border-slate-100 pt-5">
-            {t("demo_accounts")}
-            <div className="mt-2 space-y-1 font-mono">
-              <div>{t("admin_role")}: admin@inspection.app / admin123</div>
-              <div>{t("tech_role")}: tech1@inspection.app / tech123</div>
-            </div>
-          </div>
         </form>
       </div>
     </div>
