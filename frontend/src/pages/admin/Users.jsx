@@ -10,7 +10,7 @@ export default function Users() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({
-    email: "", name: "", password: "", role: "technician", specialty: "electrical",
+    employee_number: "", name: "", password: "", role: "technician", specialty: "electrical",
   });
 
   const load = async () => {
@@ -23,13 +23,13 @@ export default function Users() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ email: "", name: "", password: "", role: "technician", specialty: "electrical" });
+    setForm({ employee_number: "", name: "", password: "", role: "technician", specialty: "electrical" });
     setShowForm(true);
   };
   const openEdit = (u) => {
     setEditing(u);
     setForm({
-      email: u.email, name: u.name, password: "",
+      employee_number: u.employee_number || "", name: u.name, password: "",
       role: u.role, specialty: u.specialty || "electrical",
     });
     setShowForm(true);
@@ -45,7 +45,7 @@ export default function Users() {
         await api.patch(`/users/${editing.id}`, body);
       } else {
         const body = {
-          email: form.email, name: form.name,
+          employee_number: form.employee_number, name: form.name,
           password: form.password, role: form.role,
         };
         if (form.role === "technician") body.specialty = form.specialty;
@@ -80,11 +80,11 @@ export default function Users() {
         <form onSubmit={save}
               className="bg-white border border-slate-200 p-5 mb-4 grid grid-cols-1 md:grid-cols-6 gap-3 fade-in"
               data-testid="user-form">
-          <input required type="email" placeholder={t("email")} value={form.email}
+          <input required type="text" placeholder={t("employee_number")} value={form.employee_number}
                  disabled={!!editing}
-                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                 className="h-12 px-3 border border-slate-200 disabled:bg-slate-50 md:col-span-2"
-                 data-testid="user-email-input" />
+                 onChange={(e) => setForm({ ...form, employee_number: e.target.value.toUpperCase() })}
+                 className="h-12 px-3 border border-slate-200 disabled:bg-slate-50 md:col-span-2 font-mono tracking-wider"
+                 data-testid="user-employee-input" />
           <input required placeholder={t("name_field")} value={form.name}
                  onChange={(e) => setForm({ ...form, name: e.target.value })}
                  className="h-12 px-3 border border-slate-200"
@@ -125,8 +125,8 @@ export default function Users() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
+              <th className="text-start px-4 py-3 font-semibold">{t("employee_number")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("name_field")}</th>
-              <th className="text-start px-4 py-3 font-semibold">{t("email")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("role")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("specialty")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("actions")}</th>
@@ -135,8 +135,8 @@ export default function Users() {
           <tbody>
             {list.map((u, i) => (
               <tr key={u.id} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
-                <td className="px-4 py-3 font-semibold">{u.name}</td>
-                <td className="px-4 py-3 text-slate-600">{u.email}</td>
+                <td className="px-4 py-3 font-mono tracking-wider font-semibold">{u.employee_number}</td>
+                <td className="px-4 py-3">{u.name}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-1 text-xs font-semibold ${
                     u.role === "admin" ? "bg-[#005CBE] text-white" : "bg-slate-100 text-slate-700"}`}>

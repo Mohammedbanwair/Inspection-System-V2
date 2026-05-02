@@ -104,12 +104,12 @@ CAT_TARGET = {
 
 
 class LoginIn(BaseModel):
-    email: EmailStr
+    employee_number: str
     password: str
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    employee_number: str
     password: str
     name: str
     role: Literal["admin", "technician"] = "technician"
@@ -162,15 +162,15 @@ class InspectionCreate(BaseModel):
 # ---------- Auth ----------
 @api.post("/auth/login")
 async def login(body: LoginIn, response: Response):
-    email = body.email.lower().strip()
-    user = await db.users.find_one({"email": email})
+    emp = body.employee_number.strip().upper()
+    user = await db.users.find_one({"employee_number": emp})
     if not user or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(401, "البريد الإلكتروني أو كلمة المرور غير صحيحة")
-    token = create_token(user["id"], user["email"], user["role"])
+        raise HTTPException(401, "رقم الموظف أو كلمة المرور غير صحيحة")
+    token = create_token(user["id"], user["employee_number"], user["role"])
     response.set_cookie(key="access_token", value=token, httponly=True, secure=False,
                         samesite="lax", max_age=ACCESS_TOKEN_MIN * 60, path="/")
     return {"token": token, "user": {
-        "id": user["id"], "email": user["email"], "name": user["name"],
+        "id": user["id"], "employee_number": user["employee_number"], "name": user["name"],
         "role": user["role"], "specialty": user.get("specialty"),
     }}
 
@@ -194,13 +194,15 @@ async def list_users(_=Depends(require_admin)):
 
 @api.post("/users")
 async def create_user(body: UserCreate, _=Depends(require_admin)):
-    email = body.email.lower().strip()
-    if await db.users.find_one({"email": email}):
-        raise HTTPException(400, "البريد الإلكتروني مستخدم مسبقاً")
+    emp = body.employee_number.strip().upper()
+    if not emp:
+        raise HTTPException(400, "رقم الموظف مطلوب")
+    if await db.users.find_one({"employee_number": emp}):
+        raise HTTPException(400, "رقم الموظف مستخدم مسبقاً")
     specialty = body.specialty if body.role == "technician" else None
     if body.role == "technician" and not specialty:
         raise HTTPException(400, "يجب تحديد تخصص الفني")
-    doc = {"id": str(uuid.uuid4()), "email": email, "name": body.name,
+    doc = {"id": str(uuid.uuid4()), "employee_number": emp, "name": body.name,
            "role": body.role, "specialty": specialty,
            "password_hash": hash_password(body.password),
            "created_at": datetime.now(timezone.utc).isoformat()}
@@ -486,6 +488,71 @@ async def export_pdf(iid: str, _=Depends(require_admin)):
                              headers={"Content-Disposition": f'attachment; filename="inspection_{doc.get("target_number","")}.pdf"'})
 
 
+def _open_failures_pipeline():
+    """Latest answer per (target_id, question_id). Only keep those still failing."""
+    return [
+        {"$unwind": "$answers"},
+        {"$sort": {"created_at": -1}},
+        {"$group": {
+            "_id": {"target_id": "$target_id", "question_id": "$answers.question_id"},
+            "latest_answer": {"$first": "$answers.answer"},
+            "latest_note": {"$first": "$answers.note"},
+            "latest_at": {"$first": "$created_at"},
+            "inspection_id": {"$first": "$id"},
+            "target_number": {"$first": "$target_number"},
+            "target_type": {"$first": "$target_type"},
+            "target_name": {"$first": "$target_name"},
+            "category": {"$first": "$category"},
+            "technician_name": {"$first": "$technician_name"},
+        }},
+        {"$match": {"latest_answer": False}},
+        {"$sort": {"latest_at": -1}},
+    ]
+
+
+async def _count_open_failures() -> int:
+    pipe = _open_failures_pipeline()
+    pipe.append({"$count": "n"})
+    async for d in db.inspections.aggregate(pipe):
+        return d["n"]
+    return 0
+
+
+@api.get("/failures/open")
+async def list_open_failures(
+    target_number: Optional[str] = None,
+    target_type: Optional[str] = None,
+    category: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    pipe = _open_failures_pipeline()
+    questions = await db.questions.find({}, {"_id": 0}).to_list(2000)
+    qmap = {q["id"]: q for q in questions}
+    results = []
+    async for d in db.inspections.aggregate(pipe):
+        if target_number and not (d.get("target_number") or "").upper().startswith(target_number.upper()):
+            continue
+        if target_type and d.get("target_type") != target_type:
+            continue
+        if category and d.get("category") != category:
+            continue
+        q = qmap.get(d["_id"]["question_id"], {})
+        results.append({
+            "target_id": d["_id"]["target_id"],
+            "question_id": d["_id"]["question_id"],
+            "question_text": q.get("text", ""),
+            "target_number": d.get("target_number", ""),
+            "target_name": d.get("target_name", ""),
+            "target_type": d.get("target_type", ""),
+            "category": d.get("category", ""),
+            "technician_name": d.get("technician_name", ""),
+            "inspection_id": d.get("inspection_id", ""),
+            "note": d.get("latest_note", ""),
+            "since": d.get("latest_at", ""),
+        })
+    return results
+
+
 @api.get("/stats/overview")
 async def stats_overview(_=Depends(require_admin)):
     total_inspections = await db.inspections.count_documents({})
@@ -500,10 +567,12 @@ async def stats_overview(_=Depends(require_admin)):
     fails = 0
     async for d in db.inspections.aggregate(pipeline):
         fails = d["fails"]
+    open_fails = await _count_open_failures()
     return {"total_inspections": total_inspections, "total_machines": total_machines,
             "total_chillers": total_chillers, "total_panels": total_panels,
             "total_technicians": total_techs, "total_questions": total_questions,
-            "today_inspections": today_count, "total_fails": fails}
+            "today_inspections": today_count, "total_fails": fails,
+            "open_fails": open_fails}
 
 
 # ---------- Seed ----------
@@ -519,16 +588,47 @@ DEFAULT_QUESTIONS = {
 }
 
 DEFAULT_TECHS = [
-    ("tech1@inspection.app", "محمد", "tech123", "electrical"),
-    ("tech2@inspection.app", "أحمد", "tech123", "electrical"),
-    ("tech3@inspection.app", "خالد", "tech123", "mechanical"),
-    ("tech4@inspection.app", "عبدالله", "tech123", "mechanical"),
+    ("EMP-001", "محمد", "tech123", "electrical"),
+    ("EMP-002", "أحمد", "tech123", "electrical"),
+    ("EMP-003", "خالد", "tech123", "mechanical"),
+    ("EMP-004", "عبدالله", "tech123", "mechanical"),
 ]
+ADMIN_EMP_NUMBER = "ADMIN-001"
 
 
 @app.on_event("startup")
 async def startup():
-    await db.users.create_index("email", unique=True)
+    # Migration: drop legacy email unique index if present
+    try:
+        existing_indexes = await db.users.index_information()
+        if "email_1" in existing_indexes:
+            await db.users.drop_index("email_1")
+            logger.info("Dropped legacy users.email_1 index")
+    except Exception as e:
+        logger.warning(f"Index check failed (non-fatal): {e}")
+
+    # Migration: backfill employee_number for any legacy user
+    legacy = await db.users.find({"employee_number": {"$exists": False}}, {"_id": 0}).to_list(500)
+    for idx, u in enumerate(legacy):
+        if u.get("role") == "admin":
+            emp = ADMIN_EMP_NUMBER
+        else:
+            # reuse email prefix if present, else sequential
+            email = u.get("email") or ""
+            prefix = email.split("@")[0].upper() if "@" in email else f"EMP-{idx+1:03d}"
+            emp = prefix if prefix.startswith("EMP") or prefix.startswith("TECH") else f"EMP-{idx+1:03d}"
+        # ensure unique
+        base = emp
+        suffix = 1
+        while await db.users.find_one({"employee_number": emp, "id": {"$ne": u["id"]}}):
+            suffix += 1
+            emp = f"{base}-{suffix}"
+        await db.users.update_one(
+            {"id": u["id"]},
+            {"$set": {"employee_number": emp}, "$unset": {"email": ""}},
+        )
+
+    await db.users.create_index("employee_number", unique=True)
     await db.users.create_index("id", unique=True)
     for c in ("machines", "chillers", "panels"):
         await db[c].create_index("number", unique=True)
@@ -538,26 +638,32 @@ async def startup():
     await db.inspections.create_index("created_at")
     await db.inspections.create_index("target_number")
 
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@inspection.app").lower()
     admin_pw = os.environ.get("ADMIN_PASSWORD", "admin123")
-    existing = await db.users.find_one({"email": admin_email})
+    admin_emp = os.environ.get("ADMIN_EMPLOYEE_NUMBER", ADMIN_EMP_NUMBER).upper()
+    existing = await db.users.find_one({"employee_number": admin_emp})
     if not existing:
-        await db.users.insert_one({"id": str(uuid.uuid4()), "email": admin_email,
-                                   "name": "المدير", "role": "admin", "specialty": None,
+        await db.users.insert_one({"id": str(uuid.uuid4()), "employee_number": admin_emp,
+                                   "name": "ادمن", "role": "admin", "specialty": None,
                                    "password_hash": hash_password(admin_pw),
                                    "created_at": datetime.now(timezone.utc).isoformat()})
-    elif not verify_password(admin_pw, existing["password_hash"]):
-        await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_pw)}})
+    else:
+        updates = {}
+        if not verify_password(admin_pw, existing["password_hash"]):
+            updates["password_hash"] = hash_password(admin_pw)
+        if existing.get("name") == "المدير":
+            updates["name"] = "ادمن"
+        if updates:
+            await db.users.update_one({"employee_number": admin_emp}, {"$set": updates})
 
-    for email, name, pw, sp in DEFAULT_TECHS:
-        e = await db.users.find_one({"email": email})
+    for emp, name, pw, sp in DEFAULT_TECHS:
+        e = await db.users.find_one({"employee_number": emp})
         if not e:
-            await db.users.insert_one({"id": str(uuid.uuid4()), "email": email, "name": name,
+            await db.users.insert_one({"id": str(uuid.uuid4()), "employee_number": emp, "name": name,
                                        "role": "technician", "specialty": sp,
                                        "password_hash": hash_password(pw),
                                        "created_at": datetime.now(timezone.utc).isoformat()})
         elif not e.get("specialty"):
-            await db.users.update_one({"email": email}, {"$set": {"specialty": sp}})
+            await db.users.update_one({"employee_number": emp}, {"$set": {"specialty": sp}})
 
     if await db.questions.count_documents({}) == 0:
         for cat, lines in DEFAULT_QUESTIONS.items():
@@ -583,6 +689,18 @@ async def startup():
                                         "created_at": datetime.now(timezone.utc).isoformat()})
 
     logger.info("Startup complete")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    client.close()
+
+
+app.include_router(api)
+app.add_middleware(CORSMiddleware, allow_credentials=True,
+                   allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+                   allow_methods=["*"], allow_headers=["*"])
+
 
 
 @app.on_event("shutdown")

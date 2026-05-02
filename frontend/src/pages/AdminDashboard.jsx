@@ -2,6 +2,7 @@ import { useState } from "react";
 import TopBar from "../components/TopBar";
 import { useI18n } from "../lib/i18n";
 import Overview from "./admin/Overview";
+import Failures from "./admin/Failures";
 import Machines from "./admin/Machines";
 import Chillers from "./admin/Chillers";
 import Panels from "./admin/Panels";
@@ -10,10 +11,12 @@ import Users from "./admin/Users";
 import Inspections from "./admin/Inspections";
 import {
   ChartBar, Wrench, Question, UsersThree, ClipboardText, Snowflake, ListChecks,
+  WarningOctagon,
 } from "@phosphor-icons/react";
 
 const TABS = [
   { key: "overview", label_key: "tab_overview", Icon: ChartBar, Component: Overview },
+  { key: "failures", label_key: "tab_failures", Icon: WarningOctagon, Component: Failures },
   { key: "inspections", label_key: "tab_inspections", Icon: ClipboardText, Component: Inspections },
   { key: "machines", label_key: "tab_machines", Icon: Wrench, Component: Machines },
   { key: "chillers", label_key: "tab_chillers", Icon: Snowflake, Component: Chillers },

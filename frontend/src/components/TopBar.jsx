@@ -42,7 +42,7 @@ export default function TopBar() {
             </div>
             <div>
               <div className="font-semibold text-slate-900" data-testid="current-user-name">{user?.name}</div>
-              <div className="text-xs text-slate-500">{user?.email}</div>
+              <div className="text-xs text-slate-500 font-mono">{user?.employee_number}</div>
             </div>
           </div>
           <button onClick={handleLogout}

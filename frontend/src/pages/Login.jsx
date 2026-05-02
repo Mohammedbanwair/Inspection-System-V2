@@ -10,7 +10,7 @@ const BG_URL =
   "https://static.prod-images.emergentagent.com/jobs/94419418-cdef-4cb1-acaf-4ee89afc5a1d/images/b872454776c4dade8899e90da5ed958361877da59bd192f510a4681dc9bad1b2.png";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const [employeeNumber, setEmployeeNumber] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { login } = useAuth();
@@ -21,7 +21,7 @@ export default function Login() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const u = await login(email, password);
+      const u = await login(employeeNumber, password);
       toast.success(`${t("welcome")} ${u.name}`);
       navigate(u.role === "admin" ? "/admin" : "/tech");
     } catch (err) {
@@ -73,10 +73,11 @@ export default function Login() {
             <p className="text-sm text-slate-500 mt-2 leading-relaxed">{t("login_sub")}</p>
           </div>
 
-          <label className="block text-sm font-semibold text-slate-700 mb-2">{t("email")}</label>
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                 className="w-full h-12 px-4 border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
-                 placeholder="admin@inspection.app" data-testid="login-email-input" />
+          <label className="block text-sm font-semibold text-slate-700 mb-2">{t("employee_number")}</label>
+          <input type="text" required value={employeeNumber}
+                 onChange={(e) => setEmployeeNumber(e.target.value.toUpperCase())}
+                 className="w-full h-12 px-4 border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#005CBE] tracking-wider font-mono"
+                 placeholder="ADMIN-001" data-testid="login-employee-input" />
 
           <label className="block text-sm font-semibold text-slate-700 mb-2 mt-5">{t("password")}</label>
           <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
