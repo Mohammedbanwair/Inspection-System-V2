@@ -32,7 +32,9 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await api.post("/auth/logout");
-    } catch {}
+    } catch (e) {
+      console.error("Logout request failed:", e);
+    }
     localStorage.removeItem("token");
     setUser(null);
   };

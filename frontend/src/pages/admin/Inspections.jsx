@@ -239,7 +239,7 @@ export default function Inspections() {
               </div>
               <div className="border border-slate-200">
                 {(viewing.answers || []).map((a, i) => (
-                  <div key={i} className={`px-4 py-3 flex items-center gap-3 ${i > 0 ? "border-t border-slate-100" : ""}`}>
+                  <div key={a.question_id || `ans-${i}`} className={`px-4 py-3 flex items-center gap-3 ${i > 0 ? "border-t border-slate-100" : ""}`}>
                     <span className={`h-7 min-w-[50px] px-2 text-xs font-bold flex items-center justify-center ${
                       a.answer ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
                       {a.answer ? t("yes") : t("no")}
