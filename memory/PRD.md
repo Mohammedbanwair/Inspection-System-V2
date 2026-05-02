@@ -1,45 +1,52 @@
 # PRD — نظام الفحص الرقمي (Digital Inspection System)
 
 ## Original Problem Statement
-Arabic-speaking user needs to digitize paper-based machine/robot inspection workflow. Each machine has a numbered sheet with questions split across Electrical / Mechanical / Chiller sections. Answers are Yes/No (صح/خطأ). User wants to later search by date + machine number.
+Arabic-speaking user needs to digitize paper-based machine/robot inspection workflow with section-based questions (Electrical / Mechanical / Chiller / Panels). User wants role-based access, search, exports, and language switching.
 
 ## Architecture
-- Backend: FastAPI + MongoDB (motor) + JWT (bcrypt)
-- Frontend: React (CRA + CRACO) + Tailwind + Sonner + Phosphor Icons
-- All API under `/api/*`. Auth via Bearer token (localStorage) + httpOnly cookie fallback.
+- Backend: FastAPI + MongoDB (motor) + JWT (bcrypt) + reportlab (PDF)
+- Frontend: React (CRA + CRACO) + Tailwind + Sonner + Phosphor Icons + custom i18n (ar/en)
+- All API under `/api/*`. Bearer token (localStorage) + httpOnly cookie fallback.
 
 ## User Personas
-- Admin (1): manages machines, questions, users; views/filters/exports all inspections.
-- Technician (4): selects a machine, fills Yes/No answers across 3 tabs, submits.
+- Admin (1): manages machines, chillers, panels, questions, users; views/filters/exports all inspections.
+- Electrical Technician: sees Electrical (machines) + Panels branches only.
+- Mechanical Technician: sees Mechanical (machines) + Chiller branches only.
 
 ## Core Requirements (static)
-- Arabic RTL UI throughout.
-- 3 fixed question categories: electrical, mechanical, chiller.
-- Yes/No answers with optional per-question note (shown when No).
-- Admin exports CSV (Excel-compatible Arabic) and per-inspection PDF.
-- Search by machine number + date range; admin can also filter by technician.
+- 4 question categories: electrical, mechanical, chiller, panels.
+- 3 entities: machines, chillers (separate numbering from machines), panels.
+- Each section is an INDEPENDENT inspection (no need to fill all sections at once).
+- Yes/No answers + optional per-question note (shown when No).
+- Admin exports CSV (Arabic Excel) and per-inspection PDF.
+- Search by target number + date range + section + technician.
+- Bilingual UI (Arabic RTL / English LTR) with toggle.
 
 ## Implemented (2026-02)
-- JWT login/logout/me with bcrypt.
-- Admin + 4 technicians seeded, 15 default questions seeded (5 per category).
-- CRUD: users (admin), machines, questions (admin), inspections (create by tech, manage by admin).
-- Inspection stores technician_name + machine_number snapshots for reliable reporting.
-- CSV export with UTF-8 BOM for Arabic Excel; PDF export per inspection.
-- Admin stats: totals + today count + total fails.
-- Fully RTL Arabic UI, large tap-targets, segmented Yes/No toggles.
-- data-testid across all interactive elements.
+- JWT login/logout/me with bcrypt; admin + 4 specialty-typed technicians seeded.
+- Specialty-aware question filter on `/api/questions`.
+- Specialty-aware permission on `/api/inspections` POST (403 cross-section).
+- CRUD: users (with specialty), machines, chillers, panels (separate numbers), questions, inspections.
+- Inspection schema: `category` + `target_type` + `target_id` + `target_number` snapshot + `technician_id/name`.
+- Admin: 7-tab dashboard (overview, inspections, machines, chillers, panels, questions, users).
+- Tech: branch menu → inspection form with back button + Yes/No segmented controls.
+- i18n provider with persistent language preference (localStorage), RTL/LTR auto-switch.
+- CSV export with UTF-8 BOM; PDF per-inspection.
+- 30/30 backend tests + frontend smoke green.
 
 ## Test Credentials
 - Admin: admin@inspection.app / admin123
-- Technicians: tech1..4@inspection.app / tech123
+- Electrical techs: tech1@inspection.app, tech2@inspection.app / tech123
+- Mechanical techs: tech3@inspection.app, tech4@inspection.app / tech123
 
 ## Backlog
 ### P1
-- PDF export with Arabic glyph support (current PDF uses Latin; Arabic in CSV).
-- Localized RTL date picker to replace native date inputs in admin filters.
-- Bulk machine import (CSV) to quickly seed ~90 machines.
+- Translate inline toast/welcome strings when in English.
+- PDF export with native Arabic glyph support (current PDF is Latin only).
+- Localized RTL/LTR-aware date picker to replace native date inputs.
+- Bulk import (CSV) for ~90 machines.
 ### P2
-- Inspection trend charts (per machine / per technician).
+- Inspection trend charts per machine/technician.
 - Photo attachments per question (object storage).
-- Email/WhatsApp notification for failed inspections.
-- Print-friendly per-machine inspection template.
+- Email/WhatsApp alert on failed inspections.
+- Print-friendly per-machine summary.
