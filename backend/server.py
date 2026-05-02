@@ -314,6 +314,40 @@ async def delete_question(qid: str, _=Depends(require_admin)):
 
 
 # ---------- Inspections ----------
+COOLDOWN_HOURS = 3
+
+
+def _parse_iso(s: str) -> datetime:
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+async def _get_last_inspection(target_id: str, category: str):
+    return await db.inspections.find_one(
+        {"target_id": target_id, "category": category},
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+
+
+@api.get("/inspections/cooldown")
+async def cooldown(target_id: str, category: str, _=Depends(get_current_user)):
+    last = await _get_last_inspection(target_id, category)
+    if not last:
+        return {"in_cooldown": False, "remaining_seconds": 0, "last_at": None}
+    last_at = _parse_iso(last["created_at"])
+    now = datetime.now(timezone.utc)
+    elapsed = (now - last_at).total_seconds()
+    cooldown_total = COOLDOWN_HOURS * 3600
+    remaining = max(0, int(cooldown_total - elapsed))
+    return {
+        "in_cooldown": remaining > 0,
+        "remaining_seconds": remaining,
+        "cooldown_seconds": cooldown_total,
+        "last_at": last["created_at"],
+        "last_technician_name": last.get("technician_name", ""),
+    }
+
+
 @api.post("/inspections")
 async def create_inspection(body: InspectionCreate, user=Depends(get_current_user)):
     if body.category not in allowed_categories(user):
@@ -325,6 +359,19 @@ async def create_inspection(body: InspectionCreate, user=Depends(get_current_use
     target = await db[coll].find_one({"id": body.target_id}, {"_id": 0})
     if not target:
         raise HTTPException(404, "العنصر غير موجود")
+
+    # 3-hour cooldown per (target, category)
+    last = await _get_last_inspection(body.target_id, body.category)
+    if last:
+        elapsed = (datetime.now(timezone.utc) - _parse_iso(last["created_at"])).total_seconds()
+        remaining = COOLDOWN_HOURS * 3600 - elapsed
+        if remaining > 0:
+            mins = int(remaining // 60) + 1
+            raise HTTPException(
+                429,
+                f"لا يمكن رفع فحص جديد لنفس العنصر قبل مرور {COOLDOWN_HOURS} ساعات. تبقّى ~{mins} دقيقة.",
+            )
+
     doc = {"id": str(uuid.uuid4()), "category": body.category,
            "target_type": body.target_type, "target_id": body.target_id,
            "target_number": target["number"], "target_name": target.get("name", ""),

@@ -3,11 +3,18 @@ import { api, formatApiError } from "../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../lib/i18n";
 import {
-  CheckCircle, XCircle, FloppyDisk, ArrowLeft, ArrowRight,
+  CheckCircle, XCircle, FloppyDisk, ArrowLeft, ArrowRight, Clock,
 } from "@phosphor-icons/react";
 
 const TARGET_LABEL_KEY = { machine: "machine_number", chiller: "chiller_number", panel: "panel_number" };
 const TARGET_API = { machine: "/machines", chiller: "/chillers", panel: "/panels" };
+
+function formatHMS(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 export default function InspectionForm({ branch, onBack, onSubmitted }) {
   const { t, lang } = useI18n();
@@ -18,6 +25,7 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
   const [answers, setAnswers] = useState({});
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [cooldown, setCooldown] = useState(null); // {in_cooldown, remaining_seconds, last_at, last_technician_name}
 
   useEffect(() => {
     (async () => {
@@ -34,6 +42,37 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
     })();
   }, [category, target_type]);
 
+  // Fetch cooldown when target changes
+  useEffect(() => {
+    if (!targetId) { setCooldown(null); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get("/inspections/cooldown", {
+          params: { target_id: targetId, category },
+        });
+        if (alive) setCooldown(data);
+      } catch (e) {
+        if (alive) setCooldown(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [targetId, category]);
+
+  // Tick countdown every second
+  useEffect(() => {
+    if (!cooldown?.in_cooldown) return;
+    const id = setInterval(() => {
+      setCooldown((c) => {
+        if (!c) return c;
+        const next = c.remaining_seconds - 1;
+        if (next <= 0) return { ...c, in_cooldown: false, remaining_seconds: 0 };
+        return { ...c, remaining_seconds: next };
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [cooldown?.in_cooldown]);
+
   const setAnswer = (qid, v) =>
     setAnswers((p) => ({ ...p, [qid]: { ...(p[qid] || {}), answer: v } }));
   const setNoteFor = (qid, n) =>
@@ -44,8 +83,11 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
     [answers, questions],
   );
 
+  const inCooldown = !!cooldown?.in_cooldown;
+
   const submit = async () => {
     if (!targetId) return toast.error(t("select_target"));
+    if (inCooldown) return toast.error(t("cooldown_blocked"));
     if (completed < questions.length) return toast.error(t("required_all_answered"));
     setSubmitting(true);
     try {
@@ -127,6 +169,33 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
         </div>
       </div>
 
+      {inCooldown && (
+        <div
+          className="mb-6 bg-amber-50 border border-amber-300 p-5 flex items-start gap-4 fade-in"
+          data-testid="cooldown-banner"
+        >
+          <div className="h-12 w-12 bg-amber-500 text-white flex items-center justify-center flex-shrink-0">
+            <Clock size={22} weight="bold" />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-bold text-amber-900">
+              {t("cooldown_active")}
+            </div>
+            <div className="text-xs text-amber-800 mt-1 leading-relaxed">
+              {t("cooldown_message")}
+              {cooldown.last_technician_name && (
+                <> · {t("last_by")}: <span className="font-semibold">{cooldown.last_technician_name}</span></>
+              )}
+            </div>
+            <div
+              className="mt-3 text-3xl font-bold text-amber-900 tabular-nums tracking-wider"
+              data-testid="cooldown-timer"
+            >
+              {formatHMS(cooldown.remaining_seconds)}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="space-y-3">
         {questions.length === 0 && (
           <div className="text-center text-slate-500 py-10 border border-dashed border-slate-200 bg-white">
@@ -174,11 +243,11 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
                   className="w-full mt-2 p-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
                   data-testid="inspection-notes" />
-        <button onClick={submit} disabled={submitting}
-                className="mt-4 h-14 px-8 bg-slate-900 text-white font-bold text-lg flex items-center gap-2 hover:bg-slate-800 disabled:opacity-60"
+        <button onClick={submit} disabled={submitting || inCooldown}
+                className="mt-4 h-14 px-8 bg-slate-900 text-white font-bold text-lg flex items-center gap-2 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                 data-testid="submit-inspection-button">
           <FloppyDisk size={20} weight="bold" />
-          <span>{submitting ? t("saving") : t("save_inspection")}</span>
+          <span>{submitting ? t("saving") : inCooldown ? t("cooldown_blocked_short") : t("save_inspection")}</span>
         </button>
       </div>
     </div>

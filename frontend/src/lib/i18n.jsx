@@ -114,6 +114,11 @@ const DICT = {
     inspection_details: "تفاصيل الفحص",
     apply: "تطبيق",
     new_password_optional: "كلمة مرور جديدة (اختياري)",
+    cooldown_active: "هذا العنصر في فترة انتظار",
+    cooldown_message: "لا يمكن رفع فحص جديد لنفس العنصر قبل مرور 3 ساعات من آخر فحص.",
+    cooldown_blocked: "لا يمكن الحفظ — العنصر في فترة انتظار",
+    cooldown_blocked_short: "في فترة انتظار",
+    last_by: "آخر فحص بواسطة",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -228,6 +233,11 @@ const DICT = {
     inspection_details: "Inspection Details",
     apply: "Apply",
     new_password_optional: "New password (optional)",
+    cooldown_active: "This item is in a cooldown period",
+    cooldown_message: "A new inspection for the same item cannot be submitted until 3 hours have passed since the last one.",
+    cooldown_blocked: "Cannot save — item is in cooldown",
+    cooldown_blocked_short: "In cooldown",
+    last_by: "Last inspected by",
   },
 };
 
