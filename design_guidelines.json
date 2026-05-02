@@ -1,0 +1,106 @@
+{
+  "project_metadata": {
+    "name": "Industrial Digital Inspection System",
+    "theme": "Light",
+    "archetype": "Archetype 4 (Swiss & High-Contrast)",
+    "vibe": "Objective, rigid, functional, highly legible on tablets, technical",
+    "primary_language": "Arabic (RTL)"
+  },
+  "rtl_guidelines": {
+    "global_direction": "rtl",
+    "html_attribute": "dir=\"rtl\"",
+    "tailwind_classes": "CRITICAL: Must use logical properties exclusively. Use ms-, me-, ps-, pe-, border-s-, border-e-, text-start, text-end. NEVER use pl-, pr-, ml-, mr-, text-left, text-right.",
+    "typography_rules": "Do NOT apply tracking-tight or letter-spacing adjustments to Arabic text, as it breaks cursive connections. Use standard tracking. Increase line-height slightly (leading-relaxed) for legibility."
+  },
+  "typography": {
+    "font_families": {
+      "heading": "'IBM Plex Sans Arabic', sans-serif",
+      "body": "'IBM Plex Sans Arabic', sans-serif"
+    },
+    "font_imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap');"
+    ],
+    "scale": {
+      "h1": "text-4xl md:text-5xl font-bold leading-tight",
+      "h2": "text-3xl md:text-4xl font-semibold leading-snug",
+      "h3": "text-2xl font-semibold",
+      "h4": "text-xl font-medium",
+      "body_large": "text-lg",
+      "body_base": "text-base",
+      "body_small": "text-sm text-slate-500",
+      "labels": "text-xs font-semibold uppercase tracking-widest text-slate-500"
+    }
+  },
+  "colors": {
+    "background": {
+      "default": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "surface_alt": "#F1F5F9"
+    },
+    "text": {
+      "primary": "#0F172A",
+      "secondary": "#475569",
+      "muted": "#94A3B8",
+      "inverse": "#FFFFFF"
+    },
+    "brand": {
+      "primary": "#0F172A",
+      "accent": "#005CBE"
+    },
+    "semantic": {
+      "success": "#10B981",
+      "success_bg": "#D1FAE5",
+      "danger": "#EF4444",
+      "danger_bg": "#FEE2E2",
+      "warning": "#F59E0B",
+      "info": "#3B82F6"
+    },
+    "borders": {
+      "default": "#E2E8F0",
+      "focus": "#005CBE"
+    }
+  },
+  "layout_and_spacing": {
+    "strategy": "The 'Control Room' Grid & Technical Borders",
+    "bento_grid": "Admin Dashboard must use a dense bento grid (grid-cols-1 md:grid-cols-3 lg:grid-cols-4). Use gap-4 or gap-6. Every pixel utilized.",
+    "surfaces": "Grid Borders: Expose the skeleton. Minimal to zero shadows. Cards should have 1px border-slate-200. Sharp corners (rounded-none or max rounded-sm).",
+    "tablet_optimizations": "For technicians, ensure tap targets for Yes/No buttons are massive (min-h-[64px], generous padding). Use segmented controls instead of tiny native checkboxes.",
+    "padding_scale": "p-4 for tight data, p-6 or p-8 for structural containers. Prevent text collision."
+  },
+  "components_strategy": {
+    "forms_and_inputs": "Shadcn based but restyled for raw industrial look. Heavy, tall inputs (h-12 or h-14) for tablet tap-ability. 1px borders, square corners.",
+    "inspection_toggles": "DO NOT use tiny checkboxes for Yes/No. Build a large dual-button segmented control. Left/Right (or Start/End) split. When selected, bg color fully fills (Emerald for Yes, Crimson for No) and text turns white. Use Phosphor Icons (Check/X).",
+    "tabs": "Massive horizontal tabs for Electrical / Mechanical / Chiller sections. Active tab gets a thick bottom border (border-b-4 border-slate-900) or high contrast background.",
+    "tables": "Admin view uses compact data tables. border-collapse. Alternating row colors (bg-slate-50) for readability. Explicit text-start alignment."
+  },
+  "icons_and_assets": {
+    "library": "@phosphor-icons/react",
+    "style": "Regular or Bold weight for high visibility.",
+    "installation": "yarn add @phosphor-icons/react",
+    "media": {
+      "login_bg": {
+        "url": "https://static.prod-images.emergentagent.com/jobs/94419418-cdef-4cb1-acaf-4ee89afc5a1d/images/b872454776c4dade8899e90da5ed958361877da59bd192f510a4681dc9bad1b2.png",
+        "description": "High-contrast monochrome industrial factory background with robotic arms. Use as a split-screen background on the login page (hidden on mobile, 50% width on desktop). Overlay with bg-slate-900/40."
+      }
+    }
+  },
+  "interactions_and_motion": {
+    "hover_states": "Hover states must explicitly change background and text color to ensure contrast. E.g. hover:bg-slate-100 hover:text-slate-900.",
+    "focus_states": "Focus states must have a sharp 2px ring: focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2.",
+    "transitions": "Keep it fast. transition-all duration-150 ease-out. No slow or floating animations. This is a tool for rapid work."
+  },
+  "testing": {
+    "rules": "All interactive and key informational elements MUST include a 'data-testid' attribute.",
+    "convention": "kebab-case, role-based. e.g., data-testid='login-submit-button', data-testid='machine-select', data-testid='electrical-tab', data-testid='q1-yes-toggle'."
+  },
+  "instructions_to_main_agent": [
+    "You are building an Arabic RTL interface. Set dir='rtl' on the top level HTML/Body element.",
+    "Replace ALL pl-, pr-, ml-, mr-, border-l-, border-r- Tailwind classes with ps-, pe-, ms-, me-, border-s-, border-e- logical properties.",
+    "Ensure 'IBM Plex Sans Arabic' is loaded in the index.html or global CSS.",
+    "For the technician inspection view, focus on large tap targets and zero-friction entry. Use oversized custom segmented controls for Yes/No instead of native checkboxes.",
+    "Apply the 'Technical Borders' surface strategy: flat backgrounds, sharp 1px borders, no soft shadows, highly distinct sections.",
+    "Use Phosphor Icons for distinct, scalable UI iconography.",
+    "Include 'data-testid' on every clickable element and form input.",
+    "Implement routing for Login -> Admin Dashboard (with Machine/Questions/Users/Inspections CRUD) OR Technician Dashboard (Machine Select -> 3-section Form -> Submit)."
+  ]
+}
