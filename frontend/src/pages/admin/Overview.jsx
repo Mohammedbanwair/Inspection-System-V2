@@ -49,11 +49,10 @@ export default function Overview() {
 
   return (
     <div className="space-y-6" data-testid="admin-overview">
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Stat icon={ClipboardText} label={t("total_inspections")} value={stats?.total_inspections ?? "—"} testid="stat-total-inspections" />
         <Stat icon={CalendarCheck} label={t("today_inspections")} value={stats?.today_inspections ?? "—"} accent="bg-[#005CBE] text-white" testid="stat-today-inspections" />
         <Stat icon={WarningOctagon} label={t("open_fails_stat")} value={stats?.open_fails ?? "—"} accent="bg-red-500 text-white" testid="stat-open-fails" />
-        <Stat icon={Warning} label={t("total_fails")} value={stats?.total_fails ?? "—"} accent="bg-amber-500 text-white" testid="stat-fails" />
         <Stat icon={Wrench} label={t("machines_label")} value={stats?.total_machines ?? "—"} testid="stat-machines" />
         <Stat icon={Snowflake} label={t("chillers_label")} value={stats?.total_chillers ?? "—"} testid="stat-chillers" />
         <Stat icon={ListChecks} label={t("panels_label")} value={stats?.total_panels ?? "—"} testid="stat-panels" />
