@@ -4,8 +4,8 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 # Bake the backend URL into the React build (CRA reads env at build time)
-ARG REACT_APP_BACKEND_URL=https://inspection-system-v2-production.up.railway.app
-ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
+
+ENV REACT_APP_BACKEND_URL=https://inspection-system-v2-production.up.railway.app
 
 # Install deps first (layer caching)
 COPY package.json ./
