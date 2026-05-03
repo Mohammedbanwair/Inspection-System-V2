@@ -21,10 +21,18 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
+import ssl
 import certifi
 
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url, tlsCAFile=certifi.where())
+ssl_context = ssl.create_default_context(cafile=certifi.where())
+ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+client = AsyncIOMotorClient(
+    mongo_url,
+    tls=True,
+    tlsCAFile=certifi.where(),
+    serverSelectionTimeoutMS=30000,
+)
 db = client[os.environ['DB_NAME']]
 
 JWT_SECRET = os.environ['JWT_SECRET']
@@ -704,12 +712,3 @@ app.add_middleware(CORSMiddleware, allow_credentials=True,
 
 
 
-@app.on_event("shutdown")
-async def shutdown():
-    client.close()
-
-
-app.include_router(api)
-app.add_middleware(CORSMiddleware, allow_credentials=True,
-                   allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-                   allow_methods=["*"], allow_headers=["*"])
