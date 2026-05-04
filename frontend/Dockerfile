@@ -1,7 +1,7 @@
 # ---------- Build stage ----------
 FROM node:20-alpine AS build
 WORKDIR /app
-ENV REACT_APP_BACKEND_URL=https://inspection-system-v2-production.up.railway.app
+ENV REACT_APP_BACKEND_URL=https://www.inspet.pro
 COPY package.json ./
 RUN yarn install --frozen-lockfile --network-timeout 600000
 COPY . .
