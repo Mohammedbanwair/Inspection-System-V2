@@ -129,6 +129,7 @@ const DICT = {
     item: "العنصر",
     question: "السؤال",
     view_inspection: "عرض الفحص",
+    tab_requests: "طلبات التسجيل",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -258,6 +259,7 @@ const DICT = {
     item: "Item",
     question: "Question",
     view_inspection: "View inspection",
+    tab_requests: "Registration Requests",
   },
 };
 
