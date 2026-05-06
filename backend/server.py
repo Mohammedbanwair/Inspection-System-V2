@@ -23,6 +23,10 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 import ssl
 import certifi
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.drawing.image import Image as XLImage
+from openpyxl.utils import get_column_letter
 
 mongo_url = os.environ['MONGO_URL']
 ssl_context = ssl.create_default_context(cafile=certifi.where())
@@ -146,17 +150,20 @@ class QuestionCreate(BaseModel):
     category: Category
     text: str
     order: int = 0
+    answer_type: Literal["yes_no", "numeric"] = "yes_no"
 
 
 class QuestionUpdate(BaseModel):
     category: Optional[Category] = None
     text: Optional[str] = None
     order: Optional[int] = None
+    answer_type: Optional[Literal["yes_no", "numeric"]] = None
 
 
 class AnswerIn(BaseModel):
     question_id: str
-    answer: bool
+    answer: Optional[bool] = None
+    numeric_value: Optional[float] = None
     note: Optional[str] = ""
 
 
@@ -168,7 +175,88 @@ class InspectionCreate(BaseModel):
     notes: Optional[str] = ""
 
 
+class RegisterRequest(BaseModel):
+    employee_number: str
+    name: str
+    password: str
+
+
 # ---------- Auth ----------
+@api.post("/auth/register")
+async def register_request(body: RegisterRequest):
+    emp = body.employee_number.strip().upper()
+    if not emp or not body.name.strip() or not body.password:
+        raise HTTPException(400, "جميع الحقول مطلوبة")
+    # Check no existing user with same employee number
+    if await db.users.find_one({"employee_number": emp}):
+        raise HTTPException(400, "رقم الموظف مستخدم مسبقاً")
+    # Check no pending request with same employee number
+    if await db.registration_requests.find_one({"employee_number": emp, "status": "pending"}):
+        raise HTTPException(400, "يوجد طلب تسجيل معلق لهذا الرقم")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "employee_number": emp,
+        "name": body.name.strip(),
+        "password_hash": hash_password(body.password),
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.registration_requests.insert_one(doc)
+    doc.pop("_id", None); doc.pop("password_hash", None)
+    return doc
+
+
+@api.get("/registration-requests")
+async def list_registration_requests(_=Depends(require_admin)):
+    items = await db.registration_requests.find(
+        {"status": "pending"}, {"_id": 0, "password_hash": 0}
+    ).sort("created_at", 1).to_list(500)
+    return items
+
+
+@api.post("/registration-requests/{rid}/approve")
+async def approve_registration(
+    rid: str,
+    body: dict,
+    _=Depends(require_admin),
+):
+    specialty = body.get("specialty")
+    if specialty not in ["electrical", "mechanical"]:
+        raise HTTPException(400, "يجب تحديد التخصص: electrical أو mechanical")
+    req = await db.registration_requests.find_one({"id": rid, "status": "pending"})
+    if not req:
+        raise HTTPException(404, "الطلب غير موجود أو تمت معالجته")
+    emp = req["employee_number"]
+    if await db.users.find_one({"employee_number": emp}):
+        raise HTTPException(400, "رقم الموظف مستخدم مسبقاً")
+    user_doc = {
+        "id": str(uuid.uuid4()),
+        "employee_number": emp,
+        "name": req["name"],
+        "role": "technician",
+        "specialty": specialty,
+        "password_hash": req["password_hash"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(user_doc)
+    await db.registration_requests.update_one(
+        {"id": rid}, {"$set": {"status": "approved", "specialty": specialty,
+                               "approved_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"ok": True}
+
+
+@api.delete("/registration-requests/{rid}")
+async def reject_registration(rid: str, _=Depends(require_admin)):
+    res = await db.registration_requests.update_one(
+        {"id": rid, "status": "pending"},
+        {"$set": {"status": "rejected", "rejected_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if res.modified_count == 0:
+        raise HTTPException(404, "الطلب غير موجود أو تمت معالجته")
+    return {"ok": True}
+
+
 @api.post("/auth/login")
 async def login(body: LoginIn, response: Response):
     emp = body.employee_number.strip().upper()
@@ -300,8 +388,11 @@ async def list_questions(category: Optional[str] = None, user=Depends(get_curren
 
 @api.post("/questions")
 async def create_question(body: QuestionCreate, _=Depends(require_admin)):
+    # panels category always forces numeric answer type
+    answer_type = "numeric" if body.category == "panels" else body.answer_type
     doc = {"id": str(uuid.uuid4()), "category": body.category,
            "text": body.text, "order": body.order,
+           "answer_type": answer_type,
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.questions.insert_one(doc); doc.pop("_id", None)
     return doc
@@ -310,6 +401,8 @@ async def create_question(body: QuestionCreate, _=Depends(require_admin)):
 @api.patch("/questions/{qid}")
 async def update_question(qid: str, body: QuestionUpdate, _=Depends(require_admin)):
     upd = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    if upd.get("category") == "panels":
+        upd["answer_type"] = "numeric"
     if not upd: raise HTTPException(400, "لا توجد حقول")
     await db.questions.update_one({"id": qid}, {"$set": upd})
     q = await db.questions.find_one({"id": qid}, {"_id": 0})
@@ -449,6 +542,266 @@ async def export_csv(target_number: Optional[str] = None, target_type: Optional[
     return StreamingResponse(iter([buf.getvalue().encode("utf-8")]),
                              media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": 'attachment; filename="inspections.csv"'})
+
+
+@api.get("/inspections/export/excel")
+async def export_excel(
+    target_number: Optional[str] = None,
+    target_type: Optional[str] = None,
+    category: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    if not target_number:
+        raise HTTPException(400, "يجب تحديد رقم المعدة")
+    if not date_from or not date_to:
+        raise HTTPException(400, "يجب تحديد نطاق التاريخ")
+
+    q: dict = {}
+    if target_number: q["target_number"] = {"$regex": f"^{target_number}", "$options": "i"}
+    if target_type: q["target_type"] = target_type
+    if category: q["category"] = category
+    q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
+
+    items = await db.inspections.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    questions_list = await db.questions.find(
+        {"category": category} if category else {}, {"_id": 0}
+    ).sort([("category", 1), ("order", 1)]).to_list(2000)
+
+    # ─── Logo path ───────────────────────────────────────────────────────────
+    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
+
+    # ─── Helpers ─────────────────────────────────────────────────────────────
+    PURPLE      = "6B2D6B"
+    PURPLE_LIGHT= "F3E8F3"
+    WHITE       = "FFFFFF"
+    GREEN_BG    = "E8F5E9"
+    RED_BG      = "FFEBEE"
+    GREEN_FG    = "2E7D32"
+    RED_FG      = "C62828"
+    HEADER_BG   = "4A1442"
+    DAY_BG      = "EDE7F6"
+    WEEKEND_BG  = "F5F5F5"
+
+    thin  = Side(style="thin",   color="CCCCCC")
+    thick = Side(style="medium", color=PURPLE)
+
+    def cb(top=thin, bottom=thin, left=thin, right=thin):
+        return Border(top=top, bottom=bottom, left=left, right=right)
+
+    # Build {date_str: inspection} per target
+    from datetime import date as date_cls, timedelta
+    d_from = date_cls.fromisoformat(date_from)
+    d_to   = date_cls.fromisoformat(date_to)
+    days   = [d_from + timedelta(i) for i in range((d_to - d_from).days + 1)]
+
+    # Group inspections by (target_number, date)
+    insp_by_date: dict = {}
+    for insp in items:
+        d_str = insp["created_at"][:10]
+        key = d_str
+        # last inspection of the day wins
+        insp_by_date[key] = insp
+
+    cat_label = {"electrical": "Electrical", "mechanical": "Mechanical",
+                 "chiller": "Chiller", "panels": "Panels"}.get(category or "", "")
+    type_label = {"machine": "Machine", "chiller": "Chiller", "panel": "Panel"}.get(target_type or "", "")
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet(title=f"{target_number or 'Sheet1'}"[:31])
+
+    total_cols = len(days) + 1  # col A = questions, rest = days
+
+    # Column widths
+    ws.column_dimensions["A"].width = 46
+    for ci, _ in enumerate(days, start=2):
+        ws.column_dimensions[get_column_letter(ci)].width = 5.2
+
+    last_col = get_column_letter(total_cols)
+
+    # ── Rows 1-3: logo area ──────────────────────────────────────────────────
+    ws.row_dimensions[1].height = 10
+    ws.row_dimensions[2].height = 48
+    ws.row_dimensions[3].height = 10
+    for r in range(1, 4):
+        for c in range(1, total_cols + 1):
+            ws.cell(row=r, column=c).fill = PatternFill("solid", fgColor=WHITE)
+
+    if os.path.exists(LOGO_PATH):
+        img = XLImage(LOGO_PATH)
+        img.width = 400; img.height = 50; img.anchor = "A2"
+        ws.add_image(img)
+
+    # Title on right
+    t_start = get_column_letter(max(2, total_cols - 9))
+    ws.merge_cells(f"{t_start}2:{last_col}2")
+    tc = ws[f"{t_start}2"]
+    tc.value = f"Daily {cat_label} Inspection Checklist"
+    tc.font = Font(name="Arial", bold=True, size=10, color=PURPLE)
+    tc.alignment = Alignment(horizontal="right", vertical="center")
+
+    # ── Row 4: machine info ──────────────────────────────────────────────────
+    ws.row_dimensions[4].height = 22
+    ws.merge_cells(f"A4:{last_col}4")
+    ic = ws["A4"]
+    ic.value = (f"  {type_label} #: {target_number}     "
+                f"Section: {cat_label}     "
+                f"Period: {d_from.strftime('%d %b %Y')} → {d_to.strftime('%d %b %Y')}")
+    ic.font = Font(name="Arial", bold=True, size=10, color=WHITE)
+    ic.fill = PatternFill("solid", fgColor=HEADER_BG)
+    ic.alignment = Alignment(horizontal="left", vertical="center")
+
+    # ── Row 5: Month groups ──────────────────────────────────────────────────
+    ws.row_dimensions[5].height = 17
+    month_groups: dict = {}
+    for ci, d in enumerate(days, start=2):
+        month_groups.setdefault((d.year, d.month), []).append(ci)
+    for (yr, mo), cols in month_groups.items():
+        s = get_column_letter(cols[0]); e = get_column_letter(cols[-1])
+        ws.merge_cells(f"{s}5:{e}5")
+        mc = ws[f"{s}5"]
+        mc.value = date_cls(yr, mo, 1).strftime("%B %Y")
+        mc.font = Font(name="Arial", bold=True, size=8, color=WHITE)
+        mc.fill = PatternFill("solid", fgColor="7B3F7B")
+        mc.alignment = Alignment(horizontal="center", vertical="center")
+        mc.border = cb(left=thick, right=thick)
+
+    # ── Row 6: Header row ────────────────────────────────────────────────────
+    ws.row_dimensions[6].height = 20
+    qh = ws["A6"]
+    qh.value = "Check Points"
+    qh.font = Font(name="Arial", bold=True, size=10, color=WHITE)
+    qh.fill = PatternFill("solid", fgColor=HEADER_BG)
+    qh.alignment = Alignment(horizontal="center", vertical="center")
+    qh.border = cb(left=thick, right=thick, top=thick, bottom=thick)
+
+    for ci, d in enumerate(days, start=2):
+        cl = get_column_letter(ci)
+        dc = ws[f"{cl}6"]
+        dc.value = d.day
+        is_we = d.weekday() >= 4
+        dc.font = Font(name="Arial", bold=True, size=8,
+                       color=PURPLE if not is_we else "999999")
+        dc.fill = PatternFill("solid", fgColor=DAY_BG if not is_we else WEEKEND_BG)
+        dc.alignment = Alignment(horizontal="center", vertical="center")
+        dc.border = cb()
+
+    # ── Rows 7+: Questions ───────────────────────────────────────────────────
+    is_numeric_sheet = category == "panels"
+
+    for qi, q in enumerate(questions_list):
+        row = 7 + qi
+        ws.row_dimensions[row].height = 28
+        q_is_numeric = q.get("answer_type") == "numeric" or is_numeric_sheet
+
+        # Question cell
+        qc = ws[f"A{row}"]
+        qc.value = q["text"]
+        qc.font = Font(name="Arial", size=8.5)
+        qc.fill = PatternFill("solid", fgColor=PURPLE_LIGHT if qi % 2 == 0 else WHITE)
+        qc.alignment = Alignment(horizontal="left", vertical="center",
+                                 wrap_text=True, indent=1)
+        qc.border = cb(left=thick, right=thick)
+
+        for ci, d in enumerate(days, start=2):
+            cl = get_column_letter(ci)
+            cell = ws[f"{cl}{row}"]
+            is_we = d.weekday() >= 4
+            insp = insp_by_date.get(d.isoformat())
+
+            cell_val = None
+            if insp:
+                ans_map = {a["question_id"]: a for a in insp.get("answers", [])}
+                ans = ans_map.get(q["id"])
+                if ans:
+                    if q_is_numeric:
+                        nv = ans.get("numeric_value")
+                        if nv is not None:
+                            cell_val = ("numeric", nv)
+                    else:
+                        cell_val = ("bool", ans.get("answer", False))
+
+            if cell_val:
+                if cell_val[0] == "numeric":
+                    cell.value = f"{cell_val[1]}°C"
+                    cell.font = Font(name="Arial", bold=True, size=8, color=PURPLE)
+                    cell.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
+                else:
+                    ok = cell_val[1]
+                    cell.value = "✓" if ok else "✗"
+                    cell.font = Font(name="Arial", bold=True, size=11,
+                                     color=GREEN_FG if ok else RED_FG)
+                    cell.fill = PatternFill("solid",
+                                            fgColor=GREEN_BG if ok else RED_BG)
+            else:
+                cell.fill = PatternFill("solid",
+                                        fgColor=WEEKEND_BG if is_we else WHITE)
+
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = cb()
+
+    # ── Footer rows ──────────────────────────────────────────────────────────
+    last_q_row = 6 + len(questions_list)
+    fr = last_q_row + 2
+    ws.row_dimensions[fr].height = 18
+    mid = get_column_letter(max(2, total_cols // 2))
+
+    ws.merge_cells(f"A{fr}:{get_column_letter(total_cols // 2)}{fr}")
+    rb = ws[f"A{fr}"]
+    rb.value = "Done by:"
+    rb.font = Font(name="Arial", bold=True, size=9, color=PURPLE)
+    rb.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
+    rb.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    rb.border = cb(left=thick, bottom=thick)
+
+    ws.merge_cells(f"{mid}{fr}:{last_col}{fr}")
+    me = ws[f"{mid}{fr}"]
+    me.value = "Maintenance Engineer:"
+    me.font = Font(name="Arial", bold=True, size=9, color=PURPLE)
+    me.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
+    me.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    me.border = cb(right=thick, bottom=thick)
+
+    # Technician per day
+    tr = fr + 1
+    ws.row_dimensions[tr].height = 22
+    tc2 = ws[f"A{tr}"]
+    tc2.value = "Technician"
+    tc2.font = Font(name="Arial", bold=True, size=8, color=WHITE)
+    tc2.fill = PatternFill("solid", fgColor=HEADER_BG)
+    tc2.alignment = Alignment(horizontal="center", vertical="center")
+    tc2.border = cb(left=thick, right=thick, bottom=thick)
+
+    for ci, d in enumerate(days, start=2):
+        cl = get_column_letter(ci)
+        cell = ws[f"{cl}{tr}"]
+        insp = insp_by_date.get(d.isoformat())
+        if insp:
+            name = insp.get("technician_name", "")
+            initials = "".join(p[0].upper() for p in name.split() if p)
+            cell.value = initials
+            cell.font = Font(name="Arial", size=7, bold=True, color=PURPLE)
+        cell.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = cb(bottom=thick)
+
+    ws.freeze_panes = "B7"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"inspection_{target_number}_{date_from}_{date_to}.xlsx"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @api.get("/inspections/{iid}")
@@ -696,6 +1049,20 @@ async def startup():
         for n in ["P-1", "P-2", "P-3"]:
             await db.panels.insert_one({"id": str(uuid.uuid4()), "number": n, "name": "",
                                         "created_at": datetime.now(timezone.utc).isoformat()})
+
+    await db.registration_requests.create_index("id", unique=True)
+    await db.registration_requests.create_index("employee_number")
+
+    # Migration: set answer_type=numeric for all panels questions missing it
+    await db.questions.update_many(
+        {"category": "panels", "answer_type": {"$exists": False}},
+        {"$set": {"answer_type": "numeric"}},
+    )
+    # Set answer_type=yes_no for all other questions missing it
+    await db.questions.update_many(
+        {"category": {"$ne": "panels"}, "answer_type": {"$exists": False}},
+        {"$set": {"answer_type": "yes_no"}},
+    )
 
     logger.info("Startup complete")
 
