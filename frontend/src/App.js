@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { I18nProvider, useI18n } from "./lib/i18n";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import AdminDashboard from "./pages/AdminDashboard";
 import TechDashboard from "./pages/TechDashboard";
 
@@ -29,6 +30,7 @@ function App() {
           <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
             <Route
               path="/admin"
               element={
