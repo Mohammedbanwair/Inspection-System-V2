@@ -8,6 +8,7 @@ COPY requirements.prod.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.prod.txt
 COPY server.py .
+COPY company_logo.jpeg .
 EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:8001/api/auth/me || exit 1

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import { Eye, FilePdf, Trash, X, FileXls } from "@phosphor-icons/react";
 
-const CATS = ["electrical", "mechanical"];
+const CATS = ["electrical", "mechanical", "chiller", "panels_main", "panels_sub"];
 const CAT_KEY = {
   electrical: "cat_electrical", mechanical: "cat_mechanical",
   panels_main: "cat_panels_main", panels_sub: "cat_panels_sub",
