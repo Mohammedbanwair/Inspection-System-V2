@@ -3,7 +3,7 @@ import { api, formatApiError } from "../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../lib/i18n";
 import {
-  CheckCircle, XCircle, FloppyDisk, ArrowLeft, ArrowRight, Clock,
+  CheckCircle, XCircle, MinusCircle, FloppyDisk, ArrowLeft, ArrowRight, Clock,
 } from "@phosphor-icons/react";
 
 const TARGET_LABEL_KEY = { machine: "machine_number", chiller: "chiller_number", panel: "panel_number" };
@@ -87,7 +87,7 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
     () => questions.filter((q) => {
       const a = answers[q.id];
       if (q.answer_type === "numeric") return a?.numeric_value !== undefined && a?.numeric_value !== "";
-      return a?.answer !== undefined;
+      return a?.answer !== undefined;  // "na", true, false are all defined
     }).length,
     [answers, questions],
   );
@@ -104,9 +104,10 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
         category, target_type, target_id: targetId, notes,
         answers: Object.entries(answers).map(([qid, v]) => ({
           question_id: qid,
-          answer: v.answer !== undefined ? !!v.answer : null,
+          answer: v.answer === "na" ? null : v.answer !== undefined ? !!v.answer : null,
           numeric_value: v.numeric_value !== undefined ? parseFloat(v.numeric_value) : null,
           note: v.note || "",
+          skipped: v.answer === "na",
         })),
       });
       toast.success(t("inspection_saved"));
@@ -250,6 +251,12 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
                           data-testid={`q-${q.id}-no`}>
                     <XCircle size={22} weight="bold" />
                     <span>{t("no")}</span>
+                  </button>
+                  <button type="button" onClick={() => setAnswer(q.id, "na")}
+                          className={`seg-btn ${curr?.answer === "na" ? "active-na" : ""}`}
+                          data-testid={`q-${q.id}-na`}>
+                    <MinusCircle size={22} weight="bold" />
+                    <span>N/A</span>
                   </button>
                 </div>
               )}

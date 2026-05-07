@@ -364,8 +364,9 @@ export default function Inspections() {
                   <div key={a.question_id || `ans-${i}`}
                        className={`px-4 py-3 flex items-center gap-3 ${i > 0 ? "border-t border-slate-100" : ""}`}>
                     <span className={`h-7 min-w-[50px] px-2 text-xs font-bold flex items-center justify-center ${
-                      a.answer ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                      {a.answer ? t("yes") : t("no")}
+                      a.answer === null || a.skipped ? "bg-slate-100 text-slate-500"
+                      : a.answer ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                      {a.answer === null || a.skipped ? "N/A" : a.answer ? t("yes") : t("no")}
                     </span>
                     <div className="flex-1">
                       <div className="text-sm">{qMap[a.question_id]?.text || "—"}</div>

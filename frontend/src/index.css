@@ -96,6 +96,11 @@ body {
     border-color: #EF4444;
     color: #FFFFFF;
 }
+.seg-btn.active-na {
+    background: #64748B;
+    border-color: #64748B;
+    color: #FFFFFF;
+}
 
 .grid-bg {
     background-color: #F8FAFC;

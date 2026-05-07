@@ -813,12 +813,20 @@ async def export_excel(
                             nv = ans.get("numeric_value")
                             if nv is not None: cell_val = ("numeric", nv)
                         else:
-                            cell_val = ("bool", ans.get("answer", False))
+                            raw = ans.get("answer")
+                            if ans.get("skipped") or raw is None:
+                                cell_val = ("na", None)
+                            else:
+                                cell_val = ("bool", raw)
                 if cell_val:
                     if cell_val[0] == "numeric":
                         cell.value = f"{cell_val[1]}°C"
                         cell.font = Font(name="Arial", bold=True, size=8, color=PURPLE)
                         cell.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
+                    elif cell_val[0] == "na":
+                        cell.value = "N/A"
+                        cell.font = Font(name="Arial", bold=True, size=8, color="64748B")
+                        cell.fill = PatternFill("solid", fgColor="E2E8F0")
                     else:
                         ok = cell_val[1]
                         cell.value = "✓" if ok else "✗"
