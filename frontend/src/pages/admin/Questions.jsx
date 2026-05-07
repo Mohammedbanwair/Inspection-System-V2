@@ -22,6 +22,7 @@ export default function Questions() {
   const [category, setCategory] = useState("electrical");
   const [text, setText] = useState("");
   const [answerType, setAnswerType] = useState("yes_no");
+  const [unit, setUnit] = useState("°C");
 
   const load = async () => {
     try {
@@ -31,13 +32,16 @@ export default function Questions() {
   };
   useEffect(() => { load(); }, []);
 
+  const NUMERIC_CATS = ["panels_main", "panels_sub", "chiller"];
+
   const openCreate = () => {
     setEditing(null); setText(""); setCategory("electrical");
-    setAnswerType("yes_no"); setShowForm(true);
+    setAnswerType("yes_no"); setUnit("°C"); setShowForm(true);
   };
   const openEdit = (q) => {
     setEditing(q); setText(q.text); setCategory(q.category);
-    setAnswerType(q.answer_type || "yes_no"); setShowForm(true);
+    setAnswerType(q.answer_type || "yes_no");
+    setUnit(q.unit || "°C"); setShowForm(true);
   };
 
   const save = async (e) => {
@@ -45,7 +49,8 @@ export default function Questions() {
     try {
       const payload = {
         text, category,
-        answer_type: (category === "panels_main" || category === "panels_sub") ? answerType : "yes_no",
+        answer_type: NUMERIC_CATS.includes(category) ? answerType : "yes_no",
+        unit: answerType === "numeric" ? unit : null,
       };
       if (editing) {
         await api.patch(`/questions/${editing.id}`, payload);
@@ -110,8 +115,8 @@ export default function Questions() {
             </div>
           </div>
 
-          {(category === "panels_main" || category === "panels_sub") && (
-            <div className="mt-3 flex items-center gap-3">
+          {NUMERIC_CATS.includes(category) && (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <span className="text-sm font-semibold text-slate-600">
                 {lang === "ar" ? "نوع الإجابة:" : "Answer Type:"}
               </span>
@@ -135,8 +140,17 @@ export default function Questions() {
                     : "border-slate-200 text-slate-600 hover:border-purple-400"
                 }`}
               >
-                🌡️ {lang === "ar" ? "رقمي °C" : "Numeric °C"}
+                🔢 {lang === "ar" ? "رقمي" : "Numeric"}
               </button>
+              {answerType === "numeric" && (
+                <input
+                  type="text"
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  placeholder={lang === "ar" ? "الوحدة (°C, kg...)" : "Unit (°C, kg...)"}
+                  className="h-10 px-3 border border-slate-200 w-36 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                />
+              )}
             </div>
           )}
         </form>
@@ -161,7 +175,7 @@ export default function Questions() {
                 <td className="px-4 py-3">{q.text}</td>
                 <td className="px-4 py-3">
                   {q.answer_type === "numeric"
-                    ? <span className="px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-700">°C رقمي</span>
+                    ? <span className="px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-700">رقمي {q.unit || "°C"}</span>
                     : <span className="px-2 py-1 text-xs font-semibold bg-slate-100 text-slate-600">نعم / لا</span>
                   }
                 </td>

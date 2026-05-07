@@ -152,6 +152,7 @@ class QuestionCreate(BaseModel):
     text: str
     order: int = 0
     answer_type: Literal["yes_no", "numeric"] = "yes_no"
+    unit: Optional[str] = "°C"
 
 
 class QuestionUpdate(BaseModel):
@@ -159,6 +160,7 @@ class QuestionUpdate(BaseModel):
     text: Optional[str] = None
     order: Optional[int] = None
     answer_type: Optional[Literal["yes_no", "numeric"]] = None
+    unit: Optional[str] = None
 
 
 class AnswerIn(BaseModel):
@@ -494,10 +496,12 @@ async def list_questions(category: Optional[str] = None, user=Depends(get_curren
 
 @api.post("/questions")
 async def create_question(body: QuestionCreate, _=Depends(require_admin)):
-    answer_type = body.answer_type if body.category in ("panels_main", "panels_sub") else "yes_no"
+    numeric_allowed = ("panels_main", "panels_sub", "chiller")
+    answer_type = body.answer_type if body.category in numeric_allowed else "yes_no"
     doc = {"id": str(uuid.uuid4()), "category": body.category,
            "text": body.text, "order": body.order,
            "answer_type": answer_type,
+           "unit": body.unit if answer_type == "numeric" else None,
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.questions.insert_one(doc); doc.pop("_id", None)
     return doc
@@ -506,9 +510,9 @@ async def create_question(body: QuestionCreate, _=Depends(require_admin)):
 @api.patch("/questions/{qid}")
 async def update_question(qid: str, body: QuestionUpdate, _=Depends(require_admin)):
     upd = {k: v for k, v in body.model_dump(exclude_none=True).items()}
-    # For non-panels categories, always force yes_no
+    numeric_allowed = ("panels_main", "panels_sub", "chiller")
     target_cat = upd.get("category")
-    if target_cat and target_cat not in ("panels_main", "panels_sub"):
+    if target_cat and target_cat not in numeric_allowed:
         upd["answer_type"] = "yes_no"
     if not upd: raise HTTPException(400, "لا توجد حقول")
     await db.questions.update_one({"id": qid}, {"$set": upd})
@@ -522,6 +526,34 @@ async def delete_question(qid: str, _=Depends(require_admin)):
     res = await db.questions.delete_one({"id": qid})
     if res.deleted_count == 0: raise HTTPException(404, "غير موجود")
     return {"ok": True}
+
+
+@api.post("/admin/seed-chiller-questions")
+async def seed_chiller_questions(_=Depends(require_admin)):
+    """One-time endpoint: replaces all chiller questions with the standard set."""
+    CHILLER_QUESTIONS = [
+        {"text": "Check temperature setting (must be 8–25°C)",          "answer_type": "numeric", "unit": "°C"},
+        {"text": "Check actual temperature – High",                      "answer_type": "numeric", "unit": "°C"},
+        {"text": "Check actual temperature – Low",                       "answer_type": "numeric", "unit": "°C"},
+        {"text": "Check water pump pressure – High",                     "answer_type": "numeric", "unit": "kg"},
+        {"text": "Check water pump pressure – Low",                      "answer_type": "numeric", "unit": "kg"},
+        {"text": "Check any abnormal sound in the unit",                 "answer_type": "yes_no",  "unit": None},
+        {"text": "Clean air filter if necessary",                        "answer_type": "yes_no",  "unit": None},
+        {"text": "Check cooling fan if working (air cooled chiller)",    "answer_type": "yes_no",  "unit": None},
+        {"text": "Check any water leakage",                              "answer_type": "yes_no",  "unit": None},
+        {"text": "Check all water valves",                               "answer_type": "yes_no",  "unit": None},
+        {"text": "Clean water quality in the tank, change if necessary", "answer_type": "yes_no",  "unit": None},
+        {"text": "Fill up with water + Anti-rust Chemical",              "answer_type": "yes_no",  "unit": None},
+    ]
+    deleted = await db.questions.delete_many({"category": "chiller"})
+    now = datetime.now(timezone.utc).isoformat()
+    docs = [
+        {"id": str(uuid.uuid4()), "category": "chiller", "text": q["text"],
+         "order": i, "answer_type": q["answer_type"], "unit": q["unit"], "created_at": now}
+        for i, q in enumerate(CHILLER_QUESTIONS)
+    ]
+    await db.questions.insert_many(docs)
+    return {"deleted": deleted.deleted_count, "inserted": len(docs)}
 
 
 # ---------- Inspections ----------

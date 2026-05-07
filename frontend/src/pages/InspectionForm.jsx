@@ -233,7 +233,7 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
                     className="w-36 h-12 px-4 text-xl font-bold border-2 border-slate-200 focus:outline-none focus:border-[#6B2D6B] text-center"
                     data-testid={`q-${q.id}-numeric`}
                   />
-                  <span className="text-lg font-semibold text-[#6B2D6B]">°C</span>
+                  <span className="text-lg font-semibold text-[#6B2D6B]">{q.unit || "°C"}</span>
                   {curr?.numeric_value !== undefined && curr?.numeric_value !== "" && (
                     <span className="text-emerald-600 text-sm font-semibold">✓</span>
                   )}
