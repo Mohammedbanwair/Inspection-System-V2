@@ -525,7 +525,7 @@ async def delete_question(qid: str, _=Depends(require_admin)):
 
 
 # ---------- Inspections ----------
-COOLDOWN_HOURS = 3
+COOLDOWN_MINUTES = 15
 
 
 def _parse_iso(s: str) -> datetime:
@@ -548,7 +548,7 @@ async def cooldown(target_id: str, category: str, _=Depends(get_current_user)):
     last_at = _parse_iso(last["created_at"])
     now = datetime.now(timezone.utc)
     elapsed = (now - last_at).total_seconds()
-    cooldown_total = COOLDOWN_HOURS * 3600
+    cooldown_total = COOLDOWN_MINUTES * 60
     remaining = max(0, int(cooldown_total - elapsed))
     return {
         "in_cooldown": remaining > 0,
@@ -571,16 +571,16 @@ async def create_inspection(body: InspectionCreate, user=Depends(get_current_use
     if not target:
         raise HTTPException(404, "العنصر غير موجود")
 
-    # 3-hour cooldown per (target, category)
+    # 15-minute cooldown per (target, category)
     last = await _get_last_inspection(body.target_id, body.category)
     if last:
         elapsed = (datetime.now(timezone.utc) - _parse_iso(last["created_at"])).total_seconds()
-        remaining = COOLDOWN_HOURS * 3600 - elapsed
+        remaining = COOLDOWN_MINUTES * 60 - elapsed
         if remaining > 0:
             mins = int(remaining // 60) + 1
             raise HTTPException(
                 429,
-                f"لا يمكن رفع فحص جديد لنفس العنصر قبل مرور {COOLDOWN_HOURS} ساعات. تبقّى ~{mins} دقيقة.",
+                f"لا يمكن رفع فحص جديد لنفس العنصر قبل مرور {COOLDOWN_MINUTES} دقيقة. تبقّى ~{mins} دقيقة.",
             )
 
     doc = {"id": str(uuid.uuid4()), "category": body.category,
