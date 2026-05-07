@@ -14,6 +14,7 @@ export default function Inspections() {
   const [list, setList] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [viewing, setViewing] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   // Step-by-step filter state
   const [spec, setSpec]         = useState("");  // "electrical" | "mechanical"
@@ -77,10 +78,12 @@ export default function Inspections() {
   };
 
   const load = async () => {
+    setLoading(true);
     try {
       const { data } = await api.get("/inspections", { params: getApiFilters() });
       setList(data);
     } catch (e) { toast.error(formatApiError(e)); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => {
@@ -111,6 +114,10 @@ export default function Inspections() {
     }
     if (!dateFrom || !dateTo) {
       toast.error(lang === "ar" ? "يجب تحديد نطاق التاريخ" : "Date range required");
+      return;
+    }
+    if (new Date(dateFrom) > new Date(dateTo)) {
+      toast.error(lang === "ar" ? "تاريخ البداية يجب أن يكون قبل تاريخ النهاية" : "Start date must be before end date");
       return;
     }
     try {
@@ -285,7 +292,12 @@ export default function Inspections() {
             </tr>
           </thead>
           <tbody>
-            {list.length === 0 && (
+            {loading && (
+              <tr><td colSpan="7" className="text-center text-slate-400 py-8">
+                <div className="inline-block w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+              </td></tr>
+            )}
+            {!loading && list.length === 0 && (
               <tr><td colSpan="7" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
             )}
             {list.map((r, i) => {

@@ -117,6 +117,7 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
         })),
       });
       toast.success(t("inspection_saved"));
+      setCooldown({ in_cooldown: true, remaining_seconds: 15 * 60, last_technician_name: null });
       onSubmitted?.();
     } catch (e) {
       toast.error(formatApiError(e));

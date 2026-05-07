@@ -171,10 +171,11 @@ export default function TechDashboard() {
                     )}
                     {history.map((h) => {
                       const fails = (h.answers || []).filter((a) => !a.answer).length;
-                      const catKey = h.category === "panels" ? "tab_chillers" :
-                        h.category === "electrical" ? "cat_electrical" :
-                        h.category === "mechanical" ? "cat_mechanical" : "cat_chiller";
-                      const catLabel = h.category === "panels" ? (lang === "ar" ? "لوحات" : "Panels") : t(catKey);
+                      const catKey = h.category === "electrical" ? "cat_electrical" :
+                        h.category === "mechanical" ? "cat_mechanical" :
+                        h.category === "chiller" ? "cat_chiller" :
+                        h.category === "panels_main" ? "cat_panels_main" : "cat_panels_sub";
+                      const catLabel = t(catKey);
                       return (
                         <tr key={h.id} className="border-t border-slate-100">
                           <td className="px-4 py-3">

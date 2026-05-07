@@ -5,11 +5,13 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 import os
+import re
 import io
 import uuid
 import logging
 import bcrypt
 import jwt
+import pymongo.errors
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
@@ -41,7 +43,7 @@ db = client[os.environ['DB_NAME']]
 
 JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGO = "HS256"
-ACCESS_TOKEN_MIN = 60 * 24
+ACCESS_TOKEN_MIN = int(os.environ.get("ACCESS_TOKEN_MINUTES", 60 * 24))
 
 app = FastAPI()
 api = APIRouter(prefix="/api")
@@ -223,15 +225,17 @@ async def list_registration_requests(_=Depends(require_admin)):
     return items
 
 
+class ApproveBody(BaseModel):
+    specialty: Literal["electrical", "mechanical"]
+
+
 @api.post("/registration-requests/{rid}/approve")
 async def approve_registration(
     rid: str,
-    body: dict,
+    body: ApproveBody,
     _=Depends(require_admin),
 ):
-    specialty = body.get("specialty")
-    if specialty not in ["electrical", "mechanical"]:
-        raise HTTPException(400, "يجب تحديد التخصص: electrical أو mechanical")
+    specialty = body.specialty
     req = await db.registration_requests.find_one({"id": rid, "status": "pending"})
     if not req:
         raise HTTPException(404, "الطلب غير موجود أو تمت معالجته")
@@ -273,7 +277,7 @@ async def login(body: LoginIn, response: Response):
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(401, "رقم الموظف أو كلمة المرور غير صحيحة")
     token = create_token(user["id"], user["employee_number"], user["role"])
-    response.set_cookie(key="access_token", value=token, httponly=True, secure=False,
+    response.set_cookie(key="access_token", value=token, httponly=True, secure=True,
                         samesite="lax", max_age=ACCESS_TOKEN_MIN * 60, path="/")
     return {"token": token, "user": {
         "id": user["id"], "employee_number": user["employee_number"], "name": user["name"],
@@ -312,7 +316,10 @@ async def create_user(body: UserCreate, _=Depends(require_admin)):
            "role": body.role, "specialty": specialty,
            "password_hash": hash_password(body.password),
            "created_at": datetime.now(timezone.utc).isoformat()}
-    await db.users.insert_one(doc)
+    try:
+        await db.users.insert_one(doc)
+    except pymongo.errors.DuplicateKeyError:
+        raise HTTPException(400, "رقم الموظف مستخدم مسبقاً")
     doc.pop("password_hash"); doc.pop("_id", None)
     return doc
 
@@ -668,7 +675,7 @@ async def list_inspections(
         q["technician_id"] = user["id"]
     elif technician_id:
         q["technician_id"] = technician_id
-    if target_number: q["target_number"] = {"$regex": f"^{target_number}", "$options": "i"}
+    if target_number: q["target_number"] = {"$regex": f"^{re.escape(target_number)}", "$options": "i"}
     if target_type: q["target_type"] = target_type
     if category: q["category"] = category
     if date_from or date_to:
@@ -684,7 +691,7 @@ async def export_csv(target_number: Optional[str] = None, target_type: Optional[
                      category: Optional[str] = None, date_from: Optional[str] = None,
                      date_to: Optional[str] = None, _=Depends(require_admin)):
     q: dict = {}
-    if target_number: q["target_number"] = {"$regex": f"^{target_number}", "$options": "i"}
+    if target_number: q["target_number"] = {"$regex": f"^{re.escape(target_number)}", "$options": "i"}
     if target_type: q["target_type"] = target_type
     if category: q["category"] = category
     if date_from or date_to:
@@ -734,7 +741,7 @@ async def export_excel(
     IS_PANEL = category in ("panels_main", "panels_sub")
 
     q: dict = {}
-    if target_number: q["target_number"] = {"$regex": f"^{target_number}", "$options": "i"}
+    if target_number: q["target_number"] = {"$regex": f"^{re.escape(target_number)}", "$options": "i"}
     if target_type: q["target_type"] = target_type
     if category: q["category"] = category
     q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
@@ -1039,7 +1046,7 @@ def _open_failures_pipeline(
     if category:
         pre_match["category"] = category
     if target_number:
-        pre_match["target_number"] = {"$regex": f"^{target_number}", "$options": "i"}
+        pre_match["target_number"] = {"$regex": f"^{re.escape(target_number)}", "$options": "i"}
 
     pipe = []
     if pre_match:
