@@ -14,6 +14,17 @@ api.interceptors.request.use((cfg) => {
   return cfg;
 });
 
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err?.response?.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/";
+    }
+    return Promise.reject(err);
+  }
+);
+
 export function formatApiError(err) {
   const d = err?.response?.data?.detail;
   if (!d) return err?.message || "حدث خطأ غير متوقع";

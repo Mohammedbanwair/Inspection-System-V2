@@ -33,16 +33,16 @@ export default function AdminDashboard() {
   const [active, setActive] = useState("overview");
   const [pendingCount, setPendingCount] = useState(0);
 
-  // Poll pending registration requests count every 30s
+  // Poll pending registration requests count every 2 minutes
   useEffect(() => {
     const fetchCount = async () => {
       try {
-        const { data } = await api.get("/registration-requests");
-        setPendingCount(data.length);
+        const { data } = await api.get("/registration-requests/count");
+        setPendingCount(data.count);
       } catch {}
     };
     fetchCount();
-    const id = setInterval(fetchCount, 30000);
+    const id = setInterval(fetchCount, 120000);
     return () => clearInterval(id);
   }, []);
 

@@ -209,6 +209,12 @@ async def register_request(body: RegisterRequest):
     return doc
 
 
+@api.get("/registration-requests/count")
+async def count_registration_requests(_=Depends(require_admin)):
+    n = await db.registration_requests.count_documents({"status": "pending"})
+    return {"count": n}
+
+
 @api.get("/registration-requests")
 async def list_registration_requests(_=Depends(require_admin)):
     items = await db.registration_requests.find(
@@ -1021,9 +1027,24 @@ async def export_pdf(iid: str, _=Depends(require_admin)):
                              headers={"Content-Disposition": f'attachment; filename="inspection_{doc.get("target_number","")}.pdf"'})
 
 
-def _open_failures_pipeline():
+def _open_failures_pipeline(
+    target_number: Optional[str] = None,
+    target_type: Optional[str] = None,
+    category: Optional[str] = None,
+):
     """Latest answer per (target_id, question_id). Only keep those still failing."""
-    return [
+    pre_match: dict = {}
+    if target_type:
+        pre_match["target_type"] = target_type
+    if category:
+        pre_match["category"] = category
+    if target_number:
+        pre_match["target_number"] = {"$regex": f"^{target_number}", "$options": "i"}
+
+    pipe = []
+    if pre_match:
+        pipe.append({"$match": pre_match})
+    pipe += [
         {"$unwind": "$answers"},
         {"$sort": {"created_at": -1}},
         {"$group": {
@@ -1041,6 +1062,7 @@ def _open_failures_pipeline():
         {"$match": {"latest_answer": False}},
         {"$sort": {"latest_at": -1}},
     ]
+    return pipe
 
 
 async def _count_open_failures() -> int:
@@ -1058,17 +1080,11 @@ async def list_open_failures(
     category: Optional[str] = None,
     _=Depends(require_admin),
 ):
-    pipe = _open_failures_pipeline()
-    questions = await db.questions.find({}, {"_id": 0}).to_list(2000)
+    pipe = _open_failures_pipeline(target_number, target_type, category)
+    questions = await db.questions.find({}, {"_id": 0, "id": 1, "text": 1}).to_list(2000)
     qmap = {q["id"]: q for q in questions}
     results = []
     async for d in db.inspections.aggregate(pipe):
-        if target_number and not (d.get("target_number") or "").upper().startswith(target_number.upper()):
-            continue
-        if target_type and d.get("target_type") != target_type:
-            continue
-        if category and d.get("category") != category:
-            continue
         q = qmap.get(d["_id"]["question_id"], {})
         results.append({
             "target_id": d["_id"]["target_id"],
@@ -1167,8 +1183,14 @@ async def startup():
         await db[c].create_index("number", unique=True)
         await db[c].create_index("id", unique=True)
     await db.questions.create_index("id", unique=True)
+    await db.questions.create_index("category")
     await db.inspections.create_index("id", unique=True)
     await db.inspections.create_index("created_at")
+    await db.inspections.create_index("target_id")
+    await db.inspections.create_index("category")
+    await db.inspections.create_index([("target_id", 1), ("category", 1)])
+    await db.inspections.create_index("target_number")
+    await db.registration_requests.create_index("status")
 
     # Seed chiller questions if none exist
     if await db.questions.count_documents({"category": "chiller"}) == 0:
@@ -1208,7 +1230,6 @@ async def startup():
             for i, q in enumerate(mech_qs)
         ])
         logger.info("Seeded 9 mechanical questions")
-    await db.inspections.create_index("target_number")
 
     admin_pw = os.environ.get("ADMIN_PASSWORD", "admin123")
     admin_emp = os.environ.get("ADMIN_EMPLOYEE_NUMBER", ADMIN_EMP_NUMBER).upper()
