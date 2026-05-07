@@ -8,10 +8,12 @@ import os
 import re
 import io
 import uuid
+import time
 import logging
 import bcrypt
 import jwt
 import pymongo.errors
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
@@ -47,6 +49,23 @@ ACCESS_TOKEN_MIN = int(os.environ.get("ACCESS_TOKEN_MINUTES", 60 * 24))
 
 app = FastAPI()
 api = APIRouter(prefix="/api")
+
+# --- Rate limiting (in-memory, per IP) ---
+_login_attempts: dict = defaultdict(list)
+_RL_WINDOW = 15 * 60   # 15 minutes window
+_RL_MAX    = 5          # max failed attempts before block
+
+def _rl_check(ip: str) -> None:
+    now = time.time()
+    _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < _RL_WINDOW]
+    if len(_login_attempts[ip]) >= _RL_MAX:
+        raise HTTPException(429, "تم تجاوز عدد المحاولات المسموح بها. حاول مرة أخرى بعد 15 دقيقة.")
+
+def _rl_fail(ip: str) -> None:
+    _login_attempts[ip].append(time.time())
+
+def _rl_clear(ip: str) -> None:
+    _login_attempts.pop(ip, None)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -271,11 +290,15 @@ async def reject_registration(rid: str, _=Depends(require_admin)):
 
 
 @api.post("/auth/login")
-async def login(body: LoginIn, response: Response):
+async def login(body: LoginIn, response: Response, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    _rl_check(ip)
     emp = body.employee_number.strip().upper()
     user = await db.users.find_one({"employee_number": emp})
     if not user or not verify_password(body.password, user["password_hash"]):
+        _rl_fail(ip)
         raise HTTPException(401, "رقم الموظف أو كلمة المرور غير صحيحة")
+    _rl_clear(ip)
     token = create_token(user["id"], user["employee_number"], user["role"])
     response.set_cookie(key="access_token", value=token, httponly=True, secure=True,
                         samesite="lax", max_age=ACCESS_TOKEN_MIN * 60, path="/")
@@ -1306,8 +1329,15 @@ async def shutdown():
 
 
 app.include_router(api)
+
+_cors_origins_env = os.environ.get("CORS_ORIGINS", "")
+_cors_origins = (
+    [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    if _cors_origins_env
+    else ["https://www.inspet.pro", "https://inspet.pro"]
+)
 app.add_middleware(CORSMiddleware, allow_credentials=True,
-                   allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+                   allow_origins=_cors_origins,
                    allow_methods=["*"], allow_headers=["*"])
 
 

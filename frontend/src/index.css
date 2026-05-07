@@ -40,6 +40,28 @@ body {
         --ring: 211 100% 37%;
         --radius: 0.125rem;
     }
+
+    .dark {
+        --background: 222 47% 8%;
+        --foreground: 210 40% 96%;
+        --card: 222 47% 11%;
+        --card-foreground: 210 40% 96%;
+        --popover: 222 47% 11%;
+        --popover-foreground: 210 40% 96%;
+        --primary: 210 40% 96%;
+        --primary-foreground: 222 47% 8%;
+        --secondary: 217 33% 17%;
+        --secondary-foreground: 210 40% 96%;
+        --muted: 217 33% 17%;
+        --muted-foreground: 215 20% 65%;
+        --accent: 217 33% 17%;
+        --accent-foreground: 210 40% 96%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 217 33% 22%;
+        --input: 217 33% 22%;
+        --ring: 211 100% 57%;
+    }
 }
 
 @layer base {
@@ -118,3 +140,68 @@ body {
 .fade-in {
     animation: fadeIn 200ms ease-out;
 }
+
+/* ── Dark Mode Global Overrides ── */
+.dark body {
+    background-color: #0F172A;
+    color: #F1F5F9;
+}
+
+/* Backgrounds */
+.dark .bg-white          { background-color: #1E293B; }
+.dark .bg-slate-50       { background-color: #0F172A; }
+.dark .bg-slate-100      { background-color: #1E293B; }
+.dark .min-h-screen      { background-color: #0F172A; }
+
+/* Text */
+.dark .text-slate-900    { color: #F1F5F9; }
+.dark .text-slate-800    { color: #E2E8F0; }
+.dark .text-slate-700    { color: #CBD5E1; }
+.dark .text-slate-600    { color: #94A3B8; }
+.dark .text-slate-500    { color: #64748B; }
+
+/* Borders */
+.dark .border-slate-200  { border-color: #334155; }
+.dark .border-slate-100  { border-color: #1E293B; }
+
+/* Hover */
+.dark .hover\:bg-slate-100:hover { background-color: #334155; }
+.dark .hover\:bg-slate-50:hover  { background-color: #1E293B; }
+
+/* Inputs, selects, textareas */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark select,
+.dark textarea {
+    background-color: #1E293B;
+    color: #F1F5F9;
+    border-color: #334155;
+}
+.dark input::placeholder,
+.dark textarea::placeholder { color: #475569; }
+
+/* Segmented buttons */
+.dark .seg-btn {
+    background-color: #1E293B;
+    color: #94A3B8;
+    border-color: #334155;
+}
+.dark .seg-btn:hover {
+    background-color: #334155;
+    color: #F1F5F9;
+}
+
+/* Grid background */
+.dark .grid-bg {
+    background-color: #0F172A;
+    background-image:
+        linear-gradient(#1E293B 1px, transparent 1px),
+        linear-gradient(90deg, #1E293B 1px, transparent 1px);
+}
+
+/* Scrollbar */
+.dark ::-webkit-scrollbar-track  { background: #1E293B; }
+.dark ::-webkit-scrollbar-thumb  { background: #475569; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #64748B; }
+
+/* Table alternating rows */
+.dark .bg-slate-50\/40 { background-color: rgba(15, 23, 42, 0.4); }
