@@ -556,6 +556,31 @@ async def seed_chiller_questions(_=Depends(require_admin)):
     return {"deleted": deleted.deleted_count, "inserted": len(docs)}
 
 
+@api.post("/admin/seed-mechanical-questions")
+async def seed_mechanical_questions(_=Depends(require_admin)):
+    """One-time endpoint: replaces all mechanical machine questions with the standard set."""
+    MECHANICAL_QUESTIONS = [
+        {"text": "Toggle bolts"},
+        {"text": "Oil leakage"},
+        {"text": "M/C saddle"},
+        {"text": "Oil temperature"},
+        {"text": "Tie bars"},
+        {"text": "Hydraulic oil level"},
+        {"text": "Ejector butterfly"},
+        {"text": "Abnormal sound or movement"},
+        {"text": "Hopper water"},
+    ]
+    deleted = await db.questions.delete_many({"category": "mechanical"})
+    now = datetime.now(timezone.utc).isoformat()
+    docs = [
+        {"id": str(uuid.uuid4()), "category": "mechanical", "text": q["text"],
+         "order": i, "answer_type": "yes_no", "unit": None, "created_at": now}
+        for i, q in enumerate(MECHANICAL_QUESTIONS)
+    ]
+    await db.questions.insert_many(docs)
+    return {"deleted": deleted.deleted_count, "inserted": len(docs)}
+
+
 # ---------- Inspections ----------
 COOLDOWN_MINUTES = 15
 
