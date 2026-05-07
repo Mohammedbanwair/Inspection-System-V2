@@ -8,17 +8,10 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-api.interceptors.request.use((cfg) => {
-  const token = localStorage.getItem("token");
-  if (token) cfg.headers.Authorization = `Bearer ${token}`;
-  return cfg;
-});
-
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err?.response?.status === 401) {
-      localStorage.removeItem("token");
       window.location.href = "/";
     }
     return Promise.reject(err);

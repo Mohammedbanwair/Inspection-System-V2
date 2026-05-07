@@ -8,23 +8,15 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      setLoading(false);
-      return;
-    }
     api
       .get("/auth/me")
       .then((r) => setUser(r.data))
-      .catch(() => {
-        localStorage.removeItem("token");
-      })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
   const login = async (employee_number, password) => {
     const { data } = await api.post("/auth/login", { employee_number, password });
-    localStorage.setItem("token", data.token);
     setUser(data.user);
     return data.user;
   };
@@ -35,7 +27,6 @@ export function AuthProvider({ children }) {
     } catch (e) {
       console.error("Logout request failed:", e);
     }
-    localStorage.removeItem("token");
     setUser(null);
   };
 

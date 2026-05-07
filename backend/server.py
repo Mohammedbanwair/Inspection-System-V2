@@ -21,6 +21,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Respons
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -66,6 +67,19 @@ def _rl_fail(ip: str) -> None:
 
 def _rl_clear(ip: str) -> None:
     _login_attempts.pop(ip, None)
+
+_reg_attempts: dict = defaultdict(list)
+_RL_REG_WINDOW = 60 * 60
+_RL_REG_MAX = 5
+
+def _rl_check_reg(ip: str) -> None:
+    now = time.time()
+    _reg_attempts[ip] = [t for t in _reg_attempts[ip] if now - t < _RL_REG_WINDOW]
+    if len(_reg_attempts[ip]) >= _RL_REG_MAX:
+        raise HTTPException(429, "تم تجاوز عدد طلبات التسجيل المسموح بها. حاول مرة أخرى بعد ساعة.")
+
+def _rl_fail_reg(ip: str) -> None:
+    _reg_attempts[ip].append(time.time())
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -207,9 +221,12 @@ class RegisterRequest(BaseModel):
 
 # ---------- Auth ----------
 @api.post("/auth/register")
-async def register_request(body: RegisterRequest):
+async def register_request(body: RegisterRequest, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    _rl_check_reg(ip)
     emp = body.employee_number.strip().upper()
     if not emp or not body.name.strip() or not body.password:
+        _rl_fail_reg(ip)
         raise HTTPException(400, "جميع الحقول مطلوبة")
     # Check no existing user with same employee number
     if await db.users.find_one({"employee_number": emp}):
@@ -227,6 +244,7 @@ async def register_request(body: RegisterRequest):
         "expires_at": datetime.now(timezone.utc) + timedelta(days=90),
     }
     await db.registration_requests.insert_one(doc)
+    _rl_fail_reg(ip)
     doc.pop("_id", None); doc.pop("password_hash", None)
     return doc
 
@@ -304,7 +322,7 @@ async def login(body: LoginIn, response: Response, request: Request):
     _rl_clear(ip)
     token = create_token(user["id"], user["employee_number"], user["role"])
     response.set_cookie(key="access_token", value=token, httponly=True, secure=True,
-                        samesite="lax", max_age=ACCESS_TOKEN_MIN * 60, path="/")
+                        samesite="strict", max_age=ACCESS_TOKEN_MIN * 60, path="/")
     return {"token": token, "user": {
         "id": user["id"], "employee_number": user["employee_number"], "name": user["name"],
         "role": user["role"], "specialty": user.get("specialty"),
@@ -1388,9 +1406,21 @@ _cors_origins = (
     if _cors_origins_env
     else ["https://www.inspet.pro", "https://inspet.pro"]
 )
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CORSMiddleware, allow_credentials=True,
                    allow_origins=_cors_origins,
-                   allow_methods=["*"], allow_headers=["*"])
+                   allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+                   allow_headers=["Content-Type", "Authorization"])
 
 
 
