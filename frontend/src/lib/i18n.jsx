@@ -64,7 +64,7 @@ const DICT = {
     no_questions: "لا توجد أسئلة في هذا القسم",
     branch_elec_machines: "كهرباء — مكائن",
     branch_elec_machines_desc: "فحص كهربائي لكل مكينة بأسئلة الكهرباء.",
-    branch_panels: "لوحات — Panels",
+    branch_panels: "لوحات",
     branch_panels_desc: "فحص اللوحات الكهربائية المستقلة.",
     branch_mech_machines: "ميكانيكا — مكائن",
     branch_mech_machines_desc: "فحص ميكانيكي لكل مكينة بأسئلة الميكانيكا.",

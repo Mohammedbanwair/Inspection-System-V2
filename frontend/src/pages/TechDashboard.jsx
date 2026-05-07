@@ -9,28 +9,53 @@ import {
   Gear, Wrench, Snowflake, ListChecks, ClipboardText, ArrowRight, ArrowLeft,
 } from "@phosphor-icons/react";
 
-const BRANCHES_BY_SPECIALTY = {
+const BRANCH_GROUPS_BY_SPECIALTY = {
   electrical: [
-    { key: "elec-machines-a", category: "electrical", target_type: "machine", group: "A",
-      title_key: "branch_elec_machines", desc_key: "branch_elec_machines_desc",
-      Icon: Gear, subtitle: "Group A" },
-    { key: "elec-machines-b", category: "electrical", target_type: "machine", group: "B",
-      title_key: "branch_elec_machines", desc_key: "branch_elec_machines_desc",
-      Icon: Gear, subtitle: "Group B" },
-    { key: "panels-main", category: "panels_main", target_type: "panel", panel_type: "main",
-      title_key: "branch_panels_main", desc_key: "branch_panels_main_desc", Icon: ListChecks },
-    { key: "panels-sub", category: "panels_sub", target_type: "panel", panel_type: "sub",
-      title_key: "branch_panels_sub", desc_key: "branch_panels_sub_desc", Icon: ListChecks },
+    {
+      key: "elec-machines",
+      title_key: "branch_elec_machines",
+      desc_key: "branch_elec_machines_desc",
+      Icon: Gear,
+      children: [
+        { key: "elec-machines-a", category: "electrical", target_type: "machine", group: "A",
+          title_key: "group_a", desc_key: "branch_elec_machines_desc", Icon: Gear },
+        { key: "elec-machines-b", category: "electrical", target_type: "machine", group: "B",
+          title_key: "group_b", desc_key: "branch_elec_machines_desc", Icon: Gear },
+      ],
+    },
+    {
+      key: "panels",
+      title_key: "branch_panels",
+      desc_key: "branch_panels_desc",
+      Icon: ListChecks,
+      children: [
+        { key: "panels-main", category: "panels_main", target_type: "panel", panel_type: "main",
+          title_key: "branch_panels_main", desc_key: "branch_panels_main_desc", Icon: ListChecks },
+        { key: "panels-sub", category: "panels_sub", target_type: "panel", panel_type: "sub",
+          title_key: "branch_panels_sub", desc_key: "branch_panels_sub_desc", Icon: ListChecks },
+      ],
+    },
   ],
   mechanical: [
-    { key: "mech-machines-a", category: "mechanical", target_type: "machine", group: "A",
-      title_key: "branch_mech_machines", desc_key: "branch_mech_machines_desc",
-      Icon: Wrench, subtitle: "Group A" },
-    { key: "mech-machines-b", category: "mechanical", target_type: "machine", group: "B",
-      title_key: "branch_mech_machines", desc_key: "branch_mech_machines_desc",
-      Icon: Wrench, subtitle: "Group B" },
-    { key: "chillers", category: "chiller", target_type: "chiller",
-      title_key: "branch_chillers", desc_key: "branch_chillers_desc", Icon: Snowflake },
+    {
+      key: "mech-machines",
+      title_key: "branch_mech_machines",
+      desc_key: "branch_mech_machines_desc",
+      Icon: Wrench,
+      children: [
+        { key: "mech-machines-a", category: "mechanical", target_type: "machine", group: "A",
+          title_key: "group_a", desc_key: "branch_mech_machines_desc", Icon: Wrench },
+        { key: "mech-machines-b", category: "mechanical", target_type: "machine", group: "B",
+          title_key: "group_b", desc_key: "branch_mech_machines_desc", Icon: Wrench },
+      ],
+    },
+    {
+      key: "chillers",
+      title_key: "branch_chillers",
+      desc_key: "branch_chillers_desc",
+      Icon: Snowflake,
+      branch: { category: "chiller", target_type: "chiller" },
+    },
   ],
 };
 
@@ -38,6 +63,7 @@ export default function TechDashboard() {
   const { user } = useAuth();
   const { t, lang } = useI18n();
   const [branch, setBranch] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);
   const [history, setHistory] = useState([]);
 
   const loadHistory = async () => {
@@ -51,7 +77,7 @@ export default function TechDashboard() {
 
   useEffect(() => { loadHistory(); }, []);
 
-  const branches = BRANCHES_BY_SPECIALTY[user?.specialty] || [];
+  const branchGroups = BRANCH_GROUPS_BY_SPECIALTY[user?.specialty] || [];
   const Arrow = lang === "ar" ? ArrowLeft : ArrowRight;
 
   return (
@@ -70,23 +96,58 @@ export default function TechDashboard() {
               <p className="text-sm text-slate-500 mt-1">{t("choose_section")}</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {branches.map(({ key, title_key, desc_key, Icon, category, target_type, group, panel_type, subtitle }) => (
-                <button key={key} onClick={() => setBranch({ category, target_type, group, panel_type })}
-                        className="group bg-white border border-slate-200 p-7 text-start hover:bg-slate-900 hover:text-white transition-all duration-150"
-                        data-testid={`branch-${key}`}>
-                  <div className="flex items-start justify-between">
-                    <div className="h-14 w-14 bg-slate-900 text-white flex items-center justify-center group-hover:bg-white group-hover:text-slate-900">
-                      <Icon size={28} weight="bold" />
-                    </div>
-                    <Arrow size={22} className="text-slate-400 group-hover:text-white" weight="bold" />
-                  </div>
-                  <h3 className="text-2xl font-bold mt-5">{t(title_key)}</h3>
-                  {subtitle && <span className="inline-block mt-1 px-2 py-0.5 text-xs font-bold bg-slate-100 text-slate-600 group-hover:bg-white/20 group-hover:text-white">{subtitle}</span>}
-                  <p className="text-sm mt-2 leading-relaxed opacity-80">{t(desc_key)}</p>
-                </button>
-              ))}
-            </div>
+            {selectedGroup ? (
+              <>
+                <div className="flex items-center gap-3 mb-6">
+                  <button
+                    onClick={() => setSelectedGroup(null)}
+                    className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors"
+                  >
+                    <Arrow size={18} weight="bold" />
+                    {t("back")}
+                  </button>
+                  <span className="text-slate-300">|</span>
+                  <span className="text-sm font-semibold text-slate-900">{t(selectedGroup.title_key)}</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {selectedGroup.children.map(({ key, title_key, desc_key, Icon, category, target_type, group, panel_type }) => (
+                    <button key={key} onClick={() => setBranch({ category, target_type, group, panel_type })}
+                            className="group bg-white border border-slate-200 p-7 text-start hover:bg-slate-900 hover:text-white transition-all duration-150"
+                            data-testid={`branch-${key}`}>
+                      <div className="flex items-start justify-between">
+                        <div className="h-14 w-14 bg-slate-900 text-white flex items-center justify-center group-hover:bg-white group-hover:text-slate-900">
+                          <Icon size={28} weight="bold" />
+                        </div>
+                        <Arrow size={22} className="text-slate-400 group-hover:text-white" weight="bold" />
+                      </div>
+                      <h3 className="text-2xl font-bold mt-5">{t(title_key)}</h3>
+                      <p className="text-sm mt-2 leading-relaxed opacity-80">{t(desc_key)}</p>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {branchGroups.map((grp) => {
+                  const { key, title_key, desc_key, Icon } = grp;
+                  return (
+                    <button key={key}
+                            onClick={() => grp.children ? setSelectedGroup(grp) : setBranch(grp.branch)}
+                            className="group bg-white border border-slate-200 p-7 text-start hover:bg-slate-900 hover:text-white transition-all duration-150"
+                            data-testid={`branch-${key}`}>
+                      <div className="flex items-start justify-between">
+                        <div className="h-14 w-14 bg-slate-900 text-white flex items-center justify-center group-hover:bg-white group-hover:text-slate-900">
+                          <Icon size={28} weight="bold" />
+                        </div>
+                        <Arrow size={22} className="text-slate-400 group-hover:text-white" weight="bold" />
+                      </div>
+                      <h3 className="text-2xl font-bold mt-5">{t(title_key)}</h3>
+                      <p className="text-sm mt-2 leading-relaxed opacity-80">{t(desc_key)}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="mt-10">
               <h3 className="text-xl font-bold text-slate-900 mb-3 flex items-center gap-2">
