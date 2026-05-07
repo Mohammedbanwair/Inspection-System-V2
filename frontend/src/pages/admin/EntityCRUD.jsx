@@ -1,15 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, formatApiError } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
-import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, DotsSixVertical } from "@phosphor-icons/react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 
-/**
- * Generic CRUD panel for entities with {id, number, name}.
- * Used for machines, chillers, panels.
- */
-export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
+export default function EntityCRUD({ resource, addLabelKey, testidPrefix, reorderable }) {
   const { t } = useI18n();
   const [list, setList] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -17,6 +13,8 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
   const [confirmTarget, setConfirmTarget] = useState(null);
   const [number, setNumber] = useState("");
   const [name, setName] = useState("");
+  const dragItem = useRef(null);
+  const dragOver = useRef(null);
 
   const load = async () => {
     try {
@@ -57,6 +55,23 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
     } finally {
       setConfirmTarget(null);
     }
+  };
+
+  const onDragStart = (e, idx) => { dragItem.current = idx; e.dataTransfer.effectAllowed = "move"; };
+  const onDragEnter = (e, idx) => { dragOver.current = idx; e.preventDefault(); };
+  const onDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; };
+  const onDrop = async () => {
+    const from = dragItem.current;
+    const to = dragOver.current;
+    if (from === null || to === null || from === to) return;
+    const reordered = [...list];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(to, 0, moved);
+    setList(reordered);
+    dragItem.current = null;
+    dragOver.current = null;
+    try { await api.patch(`/${resource}/reorder`, { ids: reordered.map((m) => m.id) }); }
+    catch (e) { toast.error(formatApiError(e)); load(); }
   };
 
   return (
@@ -103,9 +118,15 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
       )}
 
       <div className="bg-white border border-slate-200 overflow-x-auto">
+        {reorderable && (
+          <div className="px-4 py-2 text-xs text-slate-400 flex items-center gap-1 border-b border-slate-100">
+            <DotsSixVertical size={14} /> {t("drag_to_reorder")}
+          </div>
+        )}
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
+              {reorderable && <th className="w-10 px-4 py-3"></th>}
               <th className="text-start px-4 py-3 font-semibold">{t("number")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("name_field")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("actions")}</th>
@@ -113,8 +134,19 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
           </thead>
           <tbody>
             {list.map((m, i) => (
-              <tr key={m.id} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
-                <td className="px-4 py-3 font-semibold">{m.number}</td>
+              <tr key={m.id}
+                  {...(reorderable ? {
+                    draggable: true,
+                    onDragStart: (e) => onDragStart(e, i),
+                    onDragEnter: (e) => onDragEnter(e, i),
+                    onDragOver,
+                    onDrop,
+                  } : {})}
+                  className={`border-t border-slate-100 ${reorderable ? "cursor-grab active:cursor-grabbing hover:bg-blue-50/30 transition-colors" : ""} ${i % 2 ? "bg-slate-50/40" : ""}`}>
+                {reorderable && (
+                  <td className="px-4 py-3 text-slate-300"><DotsSixVertical size={18} weight="bold" /></td>
+                )}
+                <td className="px-4 py-3 font-semibold font-mono">{m.number}</td>
                 <td className="px-4 py-3">{m.name || "—"}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
@@ -133,7 +165,7 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
               </tr>
             ))}
             {list.length === 0 && (
-              <tr><td colSpan="3" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
+              <tr><td colSpan={reorderable ? 4 : 3} className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
             )}
           </tbody>
         </table>

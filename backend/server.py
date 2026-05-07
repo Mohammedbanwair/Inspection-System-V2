@@ -396,17 +396,25 @@ async def delete_user(uid: str, admin=Depends(require_admin)):
 def make_entity_routes(coll_name: str, label: str, route: str):
     @api.get(route)
     async def list_items(user=Depends(get_current_user)):
-        return await db[coll_name].find({}, {"_id": 0}).sort("number", 1).to_list(2000)
+        return await db[coll_name].find({}, {"_id": 0}).sort([("sort_order", 1), ("number", 1)]).to_list(2000)
 
     @api.post(route)
     async def create_item(body: EntityCreate, _=Depends(require_admin)):
         num = body.number.strip()
         if await db[coll_name].find_one({"number": num}):
             raise HTTPException(400, f"{label}: الرقم موجود مسبقاً")
+        count = await db[coll_name].count_documents({})
         doc = {"id": str(uuid.uuid4()), "number": num, "name": body.name or "",
-               "created_at": datetime.now(timezone.utc).isoformat()}
+               "sort_order": count, "created_at": datetime.now(timezone.utc).isoformat()}
         await db[coll_name].insert_one(doc); doc.pop("_id", None)
         return doc
+
+    @api.patch(route + "/reorder")
+    async def reorder_items(body: dict, _=Depends(require_admin)):
+        ids = body.get("ids", [])
+        for i, iid in enumerate(ids):
+            await db[coll_name].update_one({"id": iid}, {"$set": {"sort_order": i}})
+        return {"ok": True}
 
     @api.patch(route + "/{iid}")
     async def patch_item(iid: str, body: EntityUpdate, _=Depends(require_admin)):
@@ -502,7 +510,7 @@ class PanelUpdate(BaseModel):
 async def list_panels(panel_type: Optional[str] = None, user=Depends(get_current_user)):
     q: dict = {}
     if panel_type: q["panel_type"] = panel_type
-    return await db.panels.find(q, {"_id": 0}).sort("number", 1).to_list(2000)
+    return await db.panels.find(q, {"_id": 0}).sort([("sort_order", 1), ("number", 1)]).to_list(2000)
 
 
 @api.post("/panels")
@@ -510,11 +518,20 @@ async def create_panel(body: PanelCreate, _=Depends(require_admin)):
     num = body.number.strip()
     if await db.panels.find_one({"number": num}):
         raise HTTPException(400, "اللوحة: الرقم موجود مسبقاً")
+    count = await db.panels.count_documents({})
     doc = {"id": str(uuid.uuid4()), "number": num, "name": body.name or "",
-           "panel_type": body.panel_type,
+           "panel_type": body.panel_type, "sort_order": count,
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.panels.insert_one(doc); doc.pop("_id", None)
     return doc
+
+
+@api.patch("/panels/reorder")
+async def reorder_panels(body: dict, _=Depends(require_admin)):
+    ids = body.get("ids", [])
+    for i, iid in enumerate(ids):
+        await db.panels.update_one({"id": iid}, {"$set": {"sort_order": i}})
+    return {"ok": True}
 
 
 @api.patch("/panels/{iid}")
@@ -1273,6 +1290,16 @@ async def startup():
     await db.inspections.create_index("target_number")
     await db.registration_requests.create_index("status")
     await db.registration_requests.create_index("expires_at", expireAfterSeconds=0, sparse=True)
+
+    # Migration: backfill sort_order for chillers and panels missing it
+    for coll_name in ("chillers", "panels"):
+        items = await db[coll_name].find(
+            {"sort_order": {"$exists": False}}, {"_id": 0, "id": 1}
+        ).sort("number", 1).to_list(2000)
+        for i, item in enumerate(items):
+            await db[coll_name].update_one({"id": item["id"]}, {"$set": {"sort_order": i}})
+        if items:
+            logger.info(f"Backfilled sort_order for {len(items)} {coll_name}")
 
     # Migration: convert inspection answers from long to short field names
     migrated = 0
