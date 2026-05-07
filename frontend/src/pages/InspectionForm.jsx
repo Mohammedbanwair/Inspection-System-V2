@@ -283,7 +283,7 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
         <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
           {t("general_notes")}
         </label>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} maxLength={500}
                   className="w-full mt-2 p-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
                   data-testid="inspection-notes" />
         <button onClick={submit} disabled={submitting || inCooldown}

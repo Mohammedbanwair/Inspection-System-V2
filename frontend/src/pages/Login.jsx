@@ -74,13 +74,14 @@ export default function Login() {
           </div>
 
           <label className="block text-sm font-semibold text-slate-700 mb-2">{t("employee_number")}</label>
-          <input type="text" required value={employeeNumber}
+          <input type="text" required value={employeeNumber} maxLength={20}
                  onChange={(e) => setEmployeeNumber(e.target.value.toUpperCase())}
                  className="w-full h-12 px-4 border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#005CBE] tracking-wider font-mono"
                  data-testid="login-employee-input" />
 
           <label className="block text-sm font-semibold text-slate-700 mb-2 mt-5">{t("password")}</label>
-          <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+          <input type="password" required value={password} maxLength={128}
+                 onChange={(e) => setPassword(e.target.value)}
                  className="w-full h-12 px-4 border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
                  placeholder="••••••••" data-testid="login-password-input" />
 

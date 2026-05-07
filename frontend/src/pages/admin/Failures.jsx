@@ -14,12 +14,15 @@ export default function Failures() {
   const { t, lang } = useI18n();
   const [all, setAll] = useState([]);
   const [filters, setFilters] = useState({ target_number: "", target_type: "", category: "" });
+  const [loading, setLoading] = useState(true);
 
   const load = async () => {
+    setLoading(true);
     try {
       const { data } = await api.get("/failures/open");
       setAll(data);
     } catch (e) { toast.error(formatApiError(e)); }
+    finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
 
@@ -79,11 +82,16 @@ export default function Failures() {
         </h3>
       </div>
 
-      {grouped.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
+        </div>
+      ) : grouped.length === 0 ? (
         <div className="bg-emerald-50 border border-emerald-200 p-8 text-center text-emerald-700 font-semibold">
           ✓ {t("no_open_failures")}
         </div>
-      ) : (
+      ) : null}
+      {!loading && grouped.length > 0 && (
         <div className="space-y-4">
           {grouped.map((g) => (
             <div key={`${g.target_type}-${g.target_number}`} className="bg-white border border-slate-200">
@@ -104,9 +112,9 @@ export default function Failures() {
                       <td className="px-5 py-3 w-32">
                         <span className="px-2 py-1 text-xs font-semibold bg-slate-100">{catLabel(f.category)}</span>
                       </td>
-                      <td className="px-5 py-3">
-                        <div className="font-medium text-slate-900">{f.question_text}</div>
-                        {f.note && <div className="text-xs text-slate-500 mt-1">{t("notes")}: {f.note}</div>}
+                      <td className="px-5 py-3 max-w-xs">
+                        <div className="font-medium text-slate-900 truncate" title={f.question_text}>{f.question_text}</div>
+                        {f.note && <div className="text-xs text-slate-500 mt-1 truncate" title={f.note}>{t("notes")}: {f.note}</div>}
                       </td>
                       <td className="px-5 py-3 text-xs text-slate-500 w-48">
                         {f.technician_name}

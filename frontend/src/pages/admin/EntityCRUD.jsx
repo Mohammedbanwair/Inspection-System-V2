@@ -3,6 +3,7 @@ import { api, formatApiError } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 /**
  * Generic CRUD panel for entities with {id, number, name}.
@@ -13,6 +14,7 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
   const [list, setList] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [confirmTarget, setConfirmTarget] = useState(null);
   const [number, setNumber] = useState("");
   const [name, setName] = useState("");
 
@@ -45,19 +47,26 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
     }
   };
 
-  const del = async (m) => {
-    if (!window.confirm(t("confirm_delete"))) return;
+  const del = async () => {
     try {
-      await api.delete(`/${resource}/${m.id}`);
+      await api.delete(`/${resource}/${confirmTarget.id}`);
       toast.success("✓");
       load();
     } catch (err) {
       toast.error(formatApiError(err));
+    } finally {
+      setConfirmTarget(null);
     }
   };
 
   return (
     <div data-testid={`${testidPrefix}-panel`}>
+      <ConfirmDialog
+        open={!!confirmTarget}
+        message={`${t("confirm_delete")} "${confirmTarget?.number}"؟`}
+        onConfirm={del}
+        onCancel={() => setConfirmTarget(null)}
+      />
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-bold text-slate-900">{t(addLabelKey).replace(/^إضافة |^Add /, "")} ({list.length})</h3>
         <button onClick={openCreate}
@@ -71,11 +80,11 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
         <form onSubmit={save}
               className="bg-white border border-slate-200 p-5 mb-4 grid grid-cols-1 md:grid-cols-3 gap-3 fade-in"
               data-testid={`${testidPrefix}-form`}>
-          <input required placeholder={t("number")} value={number}
+          <input required placeholder={t("number")} value={number} maxLength={20}
                  onChange={(e) => setNumber(e.target.value)}
                  className="h-12 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
                  data-testid={`${testidPrefix}-number-input`} />
-          <input placeholder={t("model_optional")} value={name}
+          <input placeholder={t("model_optional")} value={name} maxLength={80}
                  onChange={(e) => setName(e.target.value)}
                  className="h-12 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
                  data-testid={`${testidPrefix}-name-input`} />
@@ -114,7 +123,7 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix }) {
                             data-testid={`${testidPrefix}-edit-${m.id}`}>
                       <PencilSimple size={14} />
                     </button>
-                    <button onClick={() => del(m)}
+                    <button onClick={() => setConfirmTarget(m)}
                             className="h-9 w-9 border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center"
                             data-testid={`${testidPrefix}-delete-${m.id}`}>
                       <Trash size={14} />

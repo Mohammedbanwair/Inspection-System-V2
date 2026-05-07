@@ -30,6 +30,7 @@ export default function Overview() {
   const { t, lang } = useI18n();
   const [stats, setStats] = useState(null);
   const [openFails, setOpenFails] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -41,11 +42,18 @@ export default function Overview() {
         setStats(s.data);
         setOpenFails(f.data);
       } catch (e) { toast.error(formatApiError(e)); }
+      finally { setLoading(false); }
     })();
   }, []);
 
   const catLabel = (c) => t(CAT_KEY[c] || "cat_electrical");
   const typeLabel = (tt) => t(tt === "machine" ? "machine" : tt === "chiller" ? "chiller" : "panel");
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
+    </div>
+  );
 
   return (
     <div className="space-y-6" data-testid="admin-overview">

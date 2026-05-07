@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { I18nProvider, useI18n } from "./lib/i18n";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const Login         = lazy(() => import("./pages/Login"));
 const Register      = lazy(() => import("./pages/Register"));
@@ -34,6 +35,7 @@ function ToasterWithDir() {
 
 function App() {
   return (
+    <ErrorBoundary>
     <ThemeProvider>
     <I18nProvider>
       <AuthProvider>
@@ -67,6 +69,7 @@ function App() {
       </AuthProvider>
     </I18nProvider>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

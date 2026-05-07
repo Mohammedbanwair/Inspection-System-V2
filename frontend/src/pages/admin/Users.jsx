@@ -3,12 +3,14 @@ import { api, formatApiError } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 export default function Users() {
   const { t } = useI18n();
   const [list, setList] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [confirmTarget, setConfirmTarget] = useState(null);
   const [form, setForm] = useState({
     employee_number: "", name: "", password: "", role: "technician", specialty: "electrical",
   });
@@ -57,16 +59,22 @@ export default function Users() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const del = async (u) => {
-    if (!window.confirm(t("confirm_delete"))) return;
-    try { await api.delete(`/users/${u.id}`); toast.success("✓"); load(); }
+  const del = async () => {
+    try { await api.delete(`/users/${confirmTarget.id}`); toast.success("✓"); load(); }
     catch (err) { toast.error(formatApiError(err)); }
+    finally { setConfirmTarget(null); }
   };
 
   const isTech = form.role === "technician";
 
   return (
     <div data-testid="users-panel">
+      <ConfirmDialog
+        open={!!confirmTarget}
+        message={`${t("confirm_delete")} "${confirmTarget?.name}"؟`}
+        onConfirm={del}
+        onCancel={() => setConfirmTarget(null)}
+      />
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-bold text-slate-900">{t("tab_users")} ({list.length})</h3>
         <button onClick={openCreate}
@@ -81,16 +89,16 @@ export default function Users() {
               className="bg-white border border-slate-200 p-5 mb-4 grid grid-cols-1 md:grid-cols-6 gap-3 fade-in"
               data-testid="user-form">
           <input required type="text" placeholder={t("employee_number")} value={form.employee_number}
-                 disabled={!!editing}
+                 disabled={!!editing} maxLength={20}
                  onChange={(e) => setForm({ ...form, employee_number: e.target.value.toUpperCase() })}
                  className="h-12 px-3 border border-slate-200 disabled:bg-slate-50 md:col-span-2 font-mono tracking-wider"
                  data-testid="user-employee-input" />
-          <input required placeholder={t("name_field")} value={form.name}
+          <input required placeholder={t("name_field")} value={form.name} maxLength={60}
                  onChange={(e) => setForm({ ...form, name: e.target.value })}
                  className="h-12 px-3 border border-slate-200"
                  data-testid="user-name-input" />
           <input type="password" placeholder={editing ? t("new_password_optional") : t("password")}
-                 required={!editing} value={form.password}
+                 required={!editing} value={form.password} maxLength={128}
                  onChange={(e) => setForm({ ...form, password: e.target.value })}
                  className="h-12 px-3 border border-slate-200"
                  data-testid="user-password-input" />
@@ -155,7 +163,7 @@ export default function Users() {
                             data-testid={`edit-user-${u.id}`}>
                       <PencilSimple size={14} />
                     </button>
-                    <button onClick={() => del(u)}
+                    <button onClick={() => setConfirmTarget(u)}
                             className="h-9 w-9 border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center"
                             data-testid={`delete-user-${u.id}`}>
                       <Trash size={14} />
