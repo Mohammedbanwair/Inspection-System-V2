@@ -39,6 +39,8 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
         ]);
         setItems(t1.data);
         setQuestions(q.data);
+        // Auto-select if only one item exists
+        if (t1.data.length === 1) setTargetId(t1.data[0].id);
       } catch (e) {
         toast.error(formatApiError(e));
       }
