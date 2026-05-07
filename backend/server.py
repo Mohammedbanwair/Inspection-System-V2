@@ -1169,6 +1169,45 @@ async def startup():
     await db.questions.create_index("id", unique=True)
     await db.inspections.create_index("id", unique=True)
     await db.inspections.create_index("created_at")
+
+    # Seed chiller questions if none exist
+    if await db.questions.count_documents({"category": "chiller"}) == 0:
+        now = datetime.now(timezone.utc).isoformat()
+        chiller_qs = [
+            {"text": "Check temperature setting (must be 8–25°C)",          "answer_type": "numeric", "unit": "°C"},
+            {"text": "Check actual temperature – High",                      "answer_type": "numeric", "unit": "°C"},
+            {"text": "Check actual temperature – Low",                       "answer_type": "numeric", "unit": "°C"},
+            {"text": "Check water pump pressure – High",                     "answer_type": "numeric", "unit": "kg"},
+            {"text": "Check water pump pressure – Low",                      "answer_type": "numeric", "unit": "kg"},
+            {"text": "Check any abnormal sound in the unit",                 "answer_type": "yes_no",  "unit": None},
+            {"text": "Clean air filter if necessary",                        "answer_type": "yes_no",  "unit": None},
+            {"text": "Check cooling fan if working (air cooled chiller)",    "answer_type": "yes_no",  "unit": None},
+            {"text": "Check any water leakage",                              "answer_type": "yes_no",  "unit": None},
+            {"text": "Check all water valves",                               "answer_type": "yes_no",  "unit": None},
+            {"text": "Clean water quality in the tank, change if necessary", "answer_type": "yes_no",  "unit": None},
+            {"text": "Fill up with water + Anti-rust Chemical",              "answer_type": "yes_no",  "unit": None},
+        ]
+        await db.questions.insert_many([
+            {"id": str(uuid.uuid4()), "category": "chiller", "text": q["text"],
+             "order": i, "answer_type": q["answer_type"], "unit": q["unit"], "created_at": now}
+            for i, q in enumerate(chiller_qs)
+        ])
+        logger.info("Seeded 12 chiller questions")
+
+    # Seed mechanical questions if none exist
+    if await db.questions.count_documents({"category": "mechanical"}) == 0:
+        now = datetime.now(timezone.utc).isoformat()
+        mech_qs = [
+            "Toggle bolts", "Oil leakage", "M/C saddle", "Oil temperature",
+            "Tie bars", "Hydraulic oil level", "Ejector butterfly",
+            "Abnormal sound or movement", "Hopper water",
+        ]
+        await db.questions.insert_many([
+            {"id": str(uuid.uuid4()), "category": "mechanical", "text": q,
+             "order": i, "answer_type": "yes_no", "unit": None, "created_at": now}
+            for i, q in enumerate(mech_qs)
+        ])
+        logger.info("Seeded 9 mechanical questions")
     await db.inspections.create_index("target_number")
 
     admin_pw = os.environ.get("ADMIN_PASSWORD", "admin123")
