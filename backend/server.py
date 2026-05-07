@@ -224,6 +224,7 @@ async def register_request(body: RegisterRequest):
         "password_hash": hash_password(body.password),
         "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=90),
     }
     await db.registration_requests.insert_one(doc)
     doc.pop("_id", None); doc.pop("password_hash", None)
@@ -273,7 +274,8 @@ async def approve_registration(
     await db.users.insert_one(user_doc)
     await db.registration_requests.update_one(
         {"id": rid}, {"$set": {"status": "approved", "specialty": specialty,
-                               "approved_at": datetime.now(timezone.utc).isoformat()}}
+                               "approved_at": datetime.now(timezone.utc).isoformat(),
+                               "expires_at": datetime.now(timezone.utc) + timedelta(days=30)}}
     )
     return {"ok": True}
 
@@ -282,7 +284,8 @@ async def approve_registration(
 async def reject_registration(rid: str, _=Depends(require_admin)):
     res = await db.registration_requests.update_one(
         {"id": rid, "status": "pending"},
-        {"$set": {"status": "rejected", "rejected_at": datetime.now(timezone.utc).isoformat()}}
+        {"$set": {"status": "rejected", "rejected_at": datetime.now(timezone.utc).isoformat(),
+                  "expires_at": datetime.now(timezone.utc) + timedelta(days=7)}}
     )
     if res.modified_count == 0:
         raise HTTPException(404, "الطلب غير موجود أو تمت معالجته")
@@ -680,7 +683,14 @@ async def create_inspection(body: InspectionCreate, user=Depends(get_current_use
            "target_type": body.target_type, "target_id": body.target_id,
            "target_number": target["number"], "target_name": target.get("name", ""),
            "technician_id": user["id"], "technician_name": user["name"],
-           "answers": [a.model_dump() for a in body.answers], "notes": body.notes or "",
+           "answers": [
+               {k: v for k, v in {
+                   "qid": a.question_id, "a": a.answer,
+                   **({"nv": a.numeric_value} if a.numeric_value is not None else {}),
+                   **({"n": a.note} if a.note else {}),
+               }.items()}
+               for a in body.answers
+           ], "notes": body.notes or "",
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.inspections.insert_one(doc); doc.pop("_id", None)
     return doc
@@ -706,7 +716,11 @@ async def list_inspections(
         if date_from: rng["$gte"] = date_from
         if date_to: rng["$lte"] = date_to + "T23:59:59"
         q["created_at"] = rng
-    return await db.inspections.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    docs = await db.inspections.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    for d in docs:
+        if d.get("answers"):
+            d["answers"] = _expand_answers(d["answers"])
+    return docs
 
 
 @api.get("/inspections/export/csv")
@@ -731,13 +745,14 @@ async def export_csv(target_number: Optional[str] = None, target_type: Optional[
     cat_map = {"electrical": "كهرباء", "mechanical": "ميكانيكا", "chiller": "شيلر", "panels": "لوحات"}
     for insp in items:
         for ans in insp.get("answers", []):
-            qobj = qmap.get(ans["question_id"], {})
+            qobj = qmap.get(ans.get("qid") or ans.get("question_id"), {})
             text = (qobj.get("text", "") or "").replace(",", "،").replace("\n", " ")
-            note = (ans.get("note", "") or "").replace(",", "،").replace("\n", " ")
+            note = (ans.get("n") or ans.get("note") or "").replace(",", "،").replace("\n", " ")
+            ans_val = ans["a"] if "a" in ans else ans.get("answer")
             row = (f'{insp["created_at"]},{type_map.get(insp.get("target_type",""),"")},'
                    f'{insp.get("target_number","")},{insp.get("target_name","")},'
                    f'{insp["technician_name"]},{cat_map.get(insp.get("category",""),"")},'
-                   f'{text},{"صح" if ans["answer"] else "خطأ"},{note}\n')
+                   f'{text},{"صح" if ans_val else "خطأ"},{note}\n')
             buf.write(row)
     return StreamingResponse(iter([buf.getvalue().encode("utf-8")]),
                              media_type="text/csv; charset=utf-8",
@@ -899,15 +914,15 @@ async def export_excel(
                 insp = insp_by_key.get(key)
                 cell_val = None
                 if insp:
-                    ans_map = {a["question_id"]: a for a in insp.get("answers", [])}
+                    ans_map = {(a.get("qid") or a.get("question_id")): a for a in insp.get("answers", [])}
                     ans = ans_map.get(q["id"])
                     if ans:
                         if q_is_numeric:
-                            nv = ans.get("numeric_value")
+                            nv = ans["nv"] if "nv" in ans else ans.get("numeric_value")
                             if nv is not None: cell_val = ("numeric", nv)
                         else:
-                            raw = ans.get("answer")
-                            if ans.get("skipped") or raw is None:
+                            raw = ans["a"] if "a" in ans else ans.get("answer")
+                            if (ans.get("sk") or ans.get("skipped")) or raw is None:
                                 cell_val = ("na", None)
                             else:
                                 cell_val = ("bool", raw)
@@ -1017,6 +1032,8 @@ async def get_inspection(iid: str, user=Depends(get_current_user)):
     if not doc: raise HTTPException(404, "غير موجود")
     if user["role"] != "admin" and doc["technician_id"] != user["id"]:
         raise HTTPException(403, "غير مصرح")
+    if doc.get("answers"):
+        doc["answers"] = _expand_answers(doc["answers"])
     return doc
 
 
@@ -1046,8 +1063,8 @@ async def export_pdf(iid: str, _=Depends(require_admin)):
     c.drawString(2 * cm, y, f"Date: {doc['created_at']}"); y -= 0.5 * cm
     c.drawString(2 * cm, y, f"Technician: {doc['technician_name']}"); y -= 0.8 * cm
     for a in doc.get("answers", []):
-        q = qmap.get(a["question_id"], {})
-        mark = "OK" if a["answer"] else "FAIL"
+        q = qmap.get(a.get("qid") or a.get("question_id"), {})
+        mark = "OK" if (a["a"] if "a" in a else a.get("answer")) else "FAIL"
         c.drawString(2.4 * cm, y, f"[{mark}] {q.get('text','')[:80]}")
         y -= 0.5 * cm
         if y < 2 * cm:
@@ -1055,6 +1072,22 @@ async def export_pdf(iid: str, _=Depends(require_admin)):
     c.showPage(); c.save(); buf.seek(0)
     return StreamingResponse(iter([buf.getvalue()]), media_type="application/pdf",
                              headers={"Content-Disposition": f'attachment; filename="inspection_{doc.get("target_number","")}.pdf"'})
+
+
+def _expand_answers(answers: list) -> list:
+    result = []
+    for a in answers:
+        if "qid" in a:
+            result.append({
+                "question_id": a["qid"],
+                "answer": a.get("a"),
+                "numeric_value": a.get("nv"),
+                "note": a.get("n", ""),
+                "skipped": False,
+            })
+        else:
+            result.append(a)
+    return result
 
 
 def _open_failures_pipeline(
@@ -1078,9 +1111,9 @@ def _open_failures_pipeline(
         {"$unwind": "$answers"},
         {"$sort": {"created_at": -1}},
         {"$group": {
-            "_id": {"target_id": "$target_id", "question_id": "$answers.question_id"},
-            "latest_answer": {"$first": "$answers.answer"},
-            "latest_note": {"$first": "$answers.note"},
+            "_id": {"target_id": "$target_id", "question_id": "$answers.qid"},
+            "latest_answer": {"$first": "$answers.a"},
+            "latest_note": {"$first": "$answers.n"},
             "latest_at": {"$first": "$created_at"},
             "inspection_id": {"$first": "$id"},
             "target_number": {"$first": "$target_number"},
@@ -1142,7 +1175,7 @@ async def stats_overview(_=Depends(require_admin)):
     total_questions = await db.questions.count_documents({})
     today = datetime.now(timezone.utc).date().isoformat()
     today_count = await db.inspections.count_documents({"created_at": {"$gte": today}})
-    pipeline = [{"$unwind": "$answers"}, {"$match": {"answers.answer": False}}, {"$count": "fails"}]
+    pipeline = [{"$unwind": "$answers"}, {"$match": {"answers.a": False}}, {"$count": "fails"}]
     fails = 0
     async for d in db.inspections.aggregate(pipeline):
         fails = d["fails"]
@@ -1221,6 +1254,25 @@ async def startup():
     await db.inspections.create_index([("target_id", 1), ("category", 1)])
     await db.inspections.create_index("target_number")
     await db.registration_requests.create_index("status")
+    await db.registration_requests.create_index("expires_at", expireAfterSeconds=0, sparse=True)
+
+    # Migration: convert inspection answers from long to short field names
+    migrated = 0
+    async for doc in db.inspections.find(
+        {"answers.0.question_id": {"$exists": True}}, {"_id": 1, "answers": 1}
+    ):
+        new_ans = []
+        for a in doc.get("answers", []):
+            na: dict = {"qid": a["question_id"], "a": a.get("answer")}
+            if a.get("numeric_value") is not None:
+                na["nv"] = a["numeric_value"]
+            if a.get("note"):
+                na["n"] = a["note"]
+            new_ans.append(na)
+        await db.inspections.update_one({"_id": doc["_id"]}, {"$set": {"answers": new_ans}})
+        migrated += 1
+    if migrated:
+        logger.info(f"Migrated {migrated} inspections to short answer field names")
 
     # Seed chiller questions if none exist
     if await db.questions.count_documents({"category": "chiller"}) == 0:
