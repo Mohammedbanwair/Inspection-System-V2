@@ -213,6 +213,11 @@ class InspectionCreate(BaseModel):
     notes: Optional[str] = ""
 
 
+class InspectionUpdate(BaseModel):
+    answers: List[AnswerIn]
+    notes: Optional[str] = ""
+
+
 class RegisterRequest(BaseModel):
     employee_number: str
     name: str
@@ -1076,6 +1081,35 @@ async def get_inspection(iid: str, user=Depends(get_current_user)):
     if doc.get("answers"):
         doc["answers"] = _expand_answers(doc["answers"])
     return doc
+
+
+@api.patch("/inspections/{iid}")
+async def update_inspection(iid: str, body: InspectionUpdate, user=Depends(get_current_user)):
+    doc = await db.inspections.find_one({"id": iid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "غير موجود")
+    if doc["technician_id"] != user["id"]:
+        raise HTTPException(403, "يمكنك تعديل فحوصاتك فقط")
+    elapsed = (datetime.now(timezone.utc) - _parse_iso(doc["created_at"])).total_seconds()
+    if elapsed > 3600:
+        raise HTTPException(403, "انتهت مدة التعديل المسموح بها — ساعة واحدة من وقت الرفع")
+    new_answers = [
+        {k: v for k, v in {
+            "qid": a.question_id, "a": a.answer,
+            **({"nv": a.numeric_value} if a.numeric_value is not None else {}),
+            **({"n": a.note} if a.note else {}),
+        }.items()}
+        for a in body.answers
+    ]
+    await db.inspections.update_one(
+        {"id": iid},
+        {"$set": {"answers": new_answers, "notes": body.notes or "",
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    updated = await db.inspections.find_one({"id": iid}, {"_id": 0})
+    if updated.get("answers"):
+        updated["answers"] = _expand_answers(updated["answers"])
+    return updated
 
 
 @api.delete("/inspections/{iid}")
