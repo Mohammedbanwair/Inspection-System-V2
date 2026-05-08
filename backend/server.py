@@ -857,25 +857,28 @@ async def export_excel(
         for ci in range(2, total_cols + 1):
             ws.column_dimensions[get_column_letter(ci)].width = 12 if IS_PANEL else 5.2
 
-        # Logo rows 1-3
-        ws.row_dimensions[1].height = 10
-        ws.row_dimensions[2].height = 48
-        ws.row_dimensions[3].height = 10
+        # Row 1: top spacing | Row 2: logo full-width | Row 3: checklist title
+        ws.row_dimensions[1].height = 6
+        ws.row_dimensions[2].height = 54
+        ws.row_dimensions[3].height = 30
         for r in range(1, 4):
             for c in range(1, total_cols + 1):
                 ws.cell(row=r, column=c).fill = PatternFill("solid", fgColor=WHITE)
+        ws.merge_cells(f"A2:{last_col}2")
         if os.path.exists(LOGO_PATH):
             img = XLImage(LOGO_PATH)
-            img.width = 420; img.height = 52; img.anchor = "A2"
+            other_col_px = int((12 if IS_PANEL else 5.2) * 7)
+            img.width = int(46 * 7) + (total_cols - 1) * other_col_px
+            img.height = 52
+            img.anchor = "A2"
             ws.add_image(img)
-
-        t_start = get_column_letter(max(2, total_cols - 9))
-        ws.merge_cells(f"{t_start}2:{last_col}2")
-        tc = ws[f"{t_start}2"]
+        ws.merge_cells(f"A3:{last_col}3")
         freq = "Weekly" if IS_PANEL else "Daily"
+        tc = ws["A3"]
         tc.value = f"{freq} {cat_label} Inspection Checklist"
-        tc.font = Font(name="Arial", bold=True, size=10, color=PURPLE)
-        tc.alignment = Alignment(horizontal="right", vertical="center")
+        tc.font = Font(name="Arial", bold=True, size=13, color=PURPLE)
+        tc.alignment = Alignment(horizontal="center", vertical="center")
+        tc.border = Border(bottom=Side(style="medium", color=PURPLE))
 
         # Row 4: info bar
         ws.row_dimensions[4].height = 22
