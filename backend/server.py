@@ -853,53 +853,53 @@ async def export_excel(
 
     def build_sheet(ws, insp_by_key, columns, col_label_fn, total_cols):
         last_col = get_column_letter(total_cols)
-        ws.column_dimensions["A"].width = 46
+        ws.column_dimensions["A"].width = 60
         for ci in range(2, total_cols + 1):
-            ws.column_dimensions[get_column_letter(ci)].width = 12 if IS_PANEL else 5.2
+            ws.column_dimensions[get_column_letter(ci)].width = 15 if IS_PANEL else 7
 
         # Row 1: top spacing | Row 2: logo full-width | Row 3: checklist title
-        ws.row_dimensions[1].height = 6
-        ws.row_dimensions[2].height = 54
-        ws.row_dimensions[3].height = 30
+        ws.row_dimensions[1].height = 8
+        ws.row_dimensions[2].height = 80
+        ws.row_dimensions[3].height = 38
         for r in range(1, 4):
             for c in range(1, total_cols + 1):
                 ws.cell(row=r, column=c).fill = PatternFill("solid", fgColor=WHITE)
         ws.merge_cells(f"A2:{last_col}2")
         if os.path.exists(LOGO_PATH):
             img = XLImage(LOGO_PATH)
-            other_col_px = int((12 if IS_PANEL else 5.2) * 7)
-            img.width = int(46 * 7) + (total_cols - 1) * other_col_px
-            img.height = 52
+            other_col_px = int((15 if IS_PANEL else 7) * 7)
+            img.width = int(60 * 7) + (total_cols - 1) * other_col_px
+            img.height = 75
             img.anchor = "A2"
             ws.add_image(img)
         ws.merge_cells(f"A3:{last_col}3")
         freq = "Weekly" if IS_PANEL else "Daily"
         tc = ws["A3"]
         tc.value = f"{freq} {cat_label} Inspection Checklist"
-        tc.font = Font(name="Arial", bold=True, size=13, color=PURPLE)
+        tc.font = Font(name="Arial", bold=True, size=16, color=PURPLE)
         tc.alignment = Alignment(horizontal="center", vertical="center")
         tc.border = Border(bottom=Side(style="medium", color=PURPLE))
 
         # Row 4: info bar
-        ws.row_dimensions[4].height = 22
+        ws.row_dimensions[4].height = 28
         ws.merge_cells(f"A4:{last_col}4")
         ic = ws["A4"]
         if IS_PANEL:
-            ic.value = f"  Panel #: {target_number}     Section: {cat_label}     Period: {d_from.strftime('%B %Y')}"
+            ic.value = f"   Panel #: {target_number}     Section: {cat_label}     Period: {d_from.strftime('%B %Y')}"
         else:
-            ic.value = (f"  {type_label} #: {target_number}     Section: {cat_label}     "
+            ic.value = (f"   {type_label} #: {target_number}     Section: {cat_label}     "
                         f"Period: {d_from.strftime('%d %b %Y')} to {d_to.strftime('%d %b %Y')}")
-        ic.font = Font(name="Arial", bold=True, size=10, color=WHITE)
+        ic.font = Font(name="Arial", bold=True, size=12, color=WHITE)
         ic.fill = PatternFill("solid", fgColor=HEADER_BG)
         ic.alignment = Alignment(horizontal="left", vertical="center")
 
         # Row 5: period header
-        ws.row_dimensions[5].height = 17
+        ws.row_dimensions[5].height = 22
         if IS_PANEL:
             ws.merge_cells(f"B5:{last_col}5")
             mc = ws["B5"]
             mc.value = d_from.strftime("%B %Y")
-            mc.font = Font(name="Arial", bold=True, size=9, color=WHITE)
+            mc.font = Font(name="Arial", bold=True, size=11, color=WHITE)
             mc.fill = PatternFill("solid", fgColor="7B3F7B")
             mc.alignment = Alignment(horizontal="center", vertical="center")
             mc.border = cb(left=thick, right=thick)
@@ -912,16 +912,16 @@ async def export_excel(
                 ws.merge_cells(f"{s}5:{e}5")
                 mc2 = ws[f"{s}5"]
                 mc2.value = date_cls(yr, mo, 1).strftime("%B %Y")
-                mc2.font = Font(name="Arial", bold=True, size=8, color=WHITE)
+                mc2.font = Font(name="Arial", bold=True, size=10, color=WHITE)
                 mc2.fill = PatternFill("solid", fgColor="7B3F7B")
                 mc2.alignment = Alignment(horizontal="center", vertical="center")
                 mc2.border = cb(left=thick, right=thick)
 
         # Row 6: column headers
-        ws.row_dimensions[6].height = 20
+        ws.row_dimensions[6].height = 28
         qh = ws["A6"]
         qh.value = "Check Points"
-        qh.font = Font(name="Arial", bold=True, size=10, color=WHITE)
+        qh.font = Font(name="Arial", bold=True, size=12, color=WHITE)
         qh.fill = PatternFill("solid", fgColor=HEADER_BG)
         qh.alignment = Alignment(horizontal="center", vertical="center")
         qh.border = cb(left=thick, right=thick, top=thick, bottom=thick)
@@ -929,7 +929,7 @@ async def export_excel(
             cl = get_column_letter(ci)
             dc = ws[f"{cl}6"]
             dc.value = col_label_fn(col)
-            dc.font = Font(name="Arial", bold=True, size=8, color=PURPLE)
+            dc.font = Font(name="Arial", bold=True, size=10, color=PURPLE)
             dc.fill = PatternFill("solid", fgColor=DAY_BG)
             dc.alignment = Alignment(horizontal="center", vertical="center")
             dc.border = cb()
@@ -937,11 +937,11 @@ async def export_excel(
         # Questions
         for qi, q in enumerate(questions_list):
             row = 7 + qi
-            ws.row_dimensions[row].height = 28
+            ws.row_dimensions[row].height = 34
             q_is_numeric = q.get("answer_type") == "numeric"
             qc = ws[f"A{row}"]
             qc.value = q["text"]
-            qc.font = Font(name="Arial", size=8.5)
+            qc.font = Font(name="Arial", size=11)
             qc.fill = PatternFill("solid", fgColor=PURPLE_LIGHT if qi % 2 == 0 else WHITE)
             qc.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1)
             qc.border = cb(left=thick, right=thick)
@@ -967,16 +967,16 @@ async def export_excel(
                 if cell_val:
                     if cell_val[0] == "numeric":
                         cell.value = f"{cell_val[1]}°C"
-                        cell.font = Font(name="Arial", bold=True, size=8, color=PURPLE)
+                        cell.font = Font(name="Arial", bold=True, size=11, color=PURPLE)
                         cell.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
                     elif cell_val[0] == "na":
                         cell.value = "N/A"
-                        cell.font = Font(name="Arial", bold=True, size=8, color="64748B")
+                        cell.font = Font(name="Arial", bold=True, size=10, color="64748B")
                         cell.fill = PatternFill("solid", fgColor="E2E8F0")
                     else:
                         ok = cell_val[1]
                         cell.value = "✓" if ok else "✗"
-                        cell.font = Font(name="Arial", bold=True, size=11,
+                        cell.font = Font(name="Arial", bold=True, size=14,
                                          color=GREEN_FG if ok else RED_FG)
                         cell.fill = PatternFill("solid", fgColor=GREEN_BG if ok else RED_BG)
                 else:
@@ -987,27 +987,27 @@ async def export_excel(
         # Footer
         last_q_row = 6 + len(questions_list)
         fr = last_q_row + 2
-        ws.row_dimensions[fr].height = 18
+        ws.row_dimensions[fr].height = 24
         mid_ci = max(2, total_cols // 2)
         ws.merge_cells(f"A{fr}:{get_column_letter(mid_ci - 1)}{fr}")
         rb = ws[f"A{fr}"]
         rb.value = "Done by:"
-        rb.font = Font(name="Arial", bold=True, size=9, color=PURPLE)
+        rb.font = Font(name="Arial", bold=True, size=11, color=PURPLE)
         rb.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
         rb.alignment = Alignment(horizontal="left", vertical="center", indent=1)
         rb.border = cb(left=thick, bottom=thick)
         ws.merge_cells(f"{get_column_letter(mid_ci)}{fr}:{last_col}{fr}")
         me = ws[f"{get_column_letter(mid_ci)}{fr}"]
         me.value = "Maintenance Engineer:"
-        me.font = Font(name="Arial", bold=True, size=9, color=PURPLE)
+        me.font = Font(name="Arial", bold=True, size=11, color=PURPLE)
         me.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
         me.alignment = Alignment(horizontal="left", vertical="center", indent=1)
         me.border = cb(right=thick, bottom=thick)
         tr = fr + 1
-        ws.row_dimensions[tr].height = 22
+        ws.row_dimensions[tr].height = 28
         tc2 = ws[f"A{tr}"]
         tc2.value = "Technician"
-        tc2.font = Font(name="Arial", bold=True, size=8, color=WHITE)
+        tc2.font = Font(name="Arial", bold=True, size=10, color=WHITE)
         tc2.fill = PatternFill("solid", fgColor=HEADER_BG)
         tc2.alignment = Alignment(horizontal="center", vertical="center")
         tc2.border = cb(left=thick, right=thick, bottom=thick)
@@ -1020,7 +1020,7 @@ async def export_excel(
                 name = insp.get("technician_name", "")
                 initials = "".join(p[0].upper() for p in name.split() if p)
                 cell.value = initials
-                cell.font = Font(name="Arial", size=7, bold=True, color=PURPLE)
+                cell.font = Font(name="Arial", size=10, bold=True, color=PURPLE)
             cell.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = cb(bottom=thick)
