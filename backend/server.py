@@ -853,6 +853,7 @@ async def export_excel(
 
     def build_sheet(ws, insp_by_key, columns, col_label_fn, total_cols):
         last_col = get_column_letter(total_cols)
+        ws.sheet_view.showGridLines = False
         ws.column_dimensions["A"].width = 60
         for ci in range(2, total_cols + 1):
             ws.column_dimensions[get_column_letter(ci)].width = 15 if IS_PANEL else 7
@@ -861,15 +862,17 @@ async def export_excel(
         ws.row_dimensions[1].height = 8
         ws.row_dimensions[2].height = 80
         ws.row_dimensions[3].height = 38
-        for r in range(1, 4):
+        for r in range(1, 5):
             for c in range(1, total_cols + 1):
-                ws.cell(row=r, column=c).fill = PatternFill("solid", fgColor=WHITE)
+                cell = ws.cell(row=r, column=c)
+                cell.fill = PatternFill("solid", fgColor=WHITE)
+                cell.border = Border()
         ws.merge_cells(f"A2:{last_col}2")
         if os.path.exists(LOGO_PATH):
             img = XLImage(LOGO_PATH)
             other_col_px = int((15 if IS_PANEL else 7) * 7)
             img.width = int(60 * 7) + (total_cols - 1) * other_col_px
-            img.height = 75
+            img.height = 82
             img.anchor = "A2"
             ws.add_image(img)
         ws.merge_cells(f"A3:{last_col}3")
