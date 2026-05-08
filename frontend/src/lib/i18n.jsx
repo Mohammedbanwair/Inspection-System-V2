@@ -144,6 +144,13 @@ const DICT = {
     group_b: "IML",
     select_group: "اختر المجموعة",
     drag_to_reorder: "اسحب لتغيير الترتيب",
+    edit_report: "تعديل التقرير",
+    edit_mode: "تعديل الفحص",
+    update_inspection: "حفظ التعديل",
+    updating: "جارٍ التعديل...",
+    inspection_updated: "تم تعديل الفحص بنجاح",
+    edit_expired: "انتهت مدة التعديل",
+    edit_window_hint: "التعديل متاح خلال ساعة من الرفع",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -288,6 +295,13 @@ const DICT = {
     group_b: "IML",
     select_group: "Select Group",
     drag_to_reorder: "Drag to reorder",
+    edit_report: "Edit Report",
+    edit_mode: "Edit Inspection",
+    update_inspection: "Save Changes",
+    updating: "Saving...",
+    inspection_updated: "Inspection updated successfully",
+    edit_expired: "Edit window expired",
+    edit_window_hint: "Editable within 1 hour of submission",
   },
 };
 

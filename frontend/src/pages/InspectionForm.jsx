@@ -17,9 +17,10 @@ function formatHMS(sec) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export default function InspectionForm({ branch, onBack, onSubmitted }) {
+export default function InspectionForm({ branch, editInspection, onBack, onSubmitted }) {
   const { t, lang } = useI18n();
   const { category, target_type, group, panel_type } = branch;
+  const isEditMode = !!editInspection;
   const [items, setItems] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [targetId, setTargetId] = useState("");
@@ -51,8 +52,27 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
     })();
   }, [category, target_type]);
 
-  // Fetch cooldown when target changes
+  // Pre-fill data when in edit mode
   useEffect(() => {
+    if (!editInspection) return;
+    setTargetId(editInspection.target_id);
+    setNotes(editInspection.notes || "");
+    const prefilled = {};
+    for (const a of editInspection.answers || []) {
+      prefilled[a.question_id] = {
+        answer: a.skipped ? "na" : a.answer,
+        ...(a.numeric_value !== null && a.numeric_value !== undefined
+          ? { numeric_value: String(a.numeric_value) }
+          : {}),
+        note: a.note || "",
+      };
+    }
+    setAnswers(prefilled);
+  }, [editInspection]);
+
+  // Fetch cooldown when target changes (skip in edit mode)
+  useEffect(() => {
+    if (isEditMode) return;
     if (!targetId) { setCooldown(null); return; }
     let alive = true;
     (async () => {
@@ -100,24 +120,35 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
 
   const inCooldown = !!cooldown?.in_cooldown;
 
+  const buildAnswersPayload = () =>
+    Object.entries(answers).map(([qid, v]) => ({
+      question_id: qid,
+      answer: v.answer === "na" ? null : v.answer !== undefined ? !!v.answer : null,
+      numeric_value: v.numeric_value !== undefined ? parseFloat(v.numeric_value) : null,
+      note: v.note || "",
+      skipped: v.answer === "na",
+    }));
+
   const submit = async () => {
     if (!targetId) return toast.error(t("select_target"));
-    if (inCooldown) return toast.error(t("cooldown_blocked"));
+    if (!isEditMode && inCooldown) return toast.error(t("cooldown_blocked"));
     if (completed < questions.length) return toast.error(t("required_all_answered"));
     setSubmitting(true);
     try {
-      await api.post("/inspections", {
-        category, target_type, target_id: targetId, notes,
-        answers: Object.entries(answers).map(([qid, v]) => ({
-          question_id: qid,
-          answer: v.answer === "na" ? null : v.answer !== undefined ? !!v.answer : null,
-          numeric_value: v.numeric_value !== undefined ? parseFloat(v.numeric_value) : null,
-          note: v.note || "",
-          skipped: v.answer === "na",
-        })),
-      });
-      toast.success(t("inspection_saved"));
-      setCooldown({ in_cooldown: true, remaining_seconds: 15 * 60, last_technician_name: null });
+      if (isEditMode) {
+        await api.patch(`/inspections/${editInspection.id}`, {
+          notes,
+          answers: buildAnswersPayload(),
+        });
+        toast.success(t("inspection_updated"));
+      } else {
+        await api.post("/inspections", {
+          category, target_type, target_id: targetId, notes,
+          answers: buildAnswersPayload(),
+        });
+        toast.success(t("inspection_saved"));
+        setCooldown({ in_cooldown: true, remaining_seconds: 15 * 60, last_technician_name: null });
+      }
       onSubmitted?.();
     } catch (e) {
       toast.error(formatApiError(e));
@@ -147,8 +178,13 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
 
       <div className="mb-6">
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-          {t("new_inspection")} · {sectionLabelFinal}
+          {isEditMode ? t("edit_mode") : t("new_inspection")} · {sectionLabelFinal}
         </div>
+        {isEditMode && (
+          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-300 text-amber-800 text-xs font-semibold">
+            {t("edit_window_hint")}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -156,19 +192,26 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
           <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
             {targetLabel}
           </label>
-          <select
-            value={targetId}
-            onChange={(e) => setTargetId(e.target.value)}
-            className="w-full h-14 mt-2 px-4 border border-slate-200 bg-white text-slate-900 text-lg focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
-            data-testid="target-select"
-          >
-            <option value="">{t("select_target")}</option>
-            {items.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.number} {m.name ? `— ${m.name}` : ""}
-              </option>
-            ))}
-          </select>
+          {isEditMode ? (
+            <div className="w-full h-14 mt-2 px-4 border border-slate-200 bg-slate-50 text-slate-700 text-lg flex items-center font-semibold">
+              {editInspection.target_number}
+              {editInspection.target_name ? ` — ${editInspection.target_name}` : ""}
+            </div>
+          ) : (
+            <select
+              value={targetId}
+              onChange={(e) => setTargetId(e.target.value)}
+              className="w-full h-14 mt-2 px-4 border border-slate-200 bg-white text-slate-900 text-lg focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
+              data-testid="target-select"
+            >
+              <option value="">{t("select_target")}</option>
+              {items.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.number} {m.name ? `— ${m.name}` : ""}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="bg-white border border-slate-200 p-5">
           <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
@@ -286,11 +329,17 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} maxLength={500}
                   className="w-full mt-2 p-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
                   data-testid="inspection-notes" />
-        <button onClick={submit} disabled={submitting || inCooldown}
+        <button onClick={submit} disabled={submitting || (!isEditMode && inCooldown)}
                 className="mt-4 h-14 px-8 bg-slate-900 text-white font-bold text-lg flex items-center gap-2 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                 data-testid="submit-inspection-button">
           <FloppyDisk size={20} weight="bold" />
-          <span>{submitting ? t("saving") : inCooldown ? t("cooldown_blocked_short") : t("save_inspection")}</span>
+          <span>
+            {submitting
+              ? isEditMode ? t("updating") : t("saving")
+              : !isEditMode && inCooldown
+                ? t("cooldown_blocked_short")
+                : isEditMode ? t("update_inspection") : t("save_inspection")}
+          </span>
         </button>
       </div>
     </div>
