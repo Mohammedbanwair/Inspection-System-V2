@@ -50,7 +50,7 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
         toast.error(formatApiError(e));
       }
     })();
-  }, [category, target_type]);
+  }, [category, target_type, group, panel_type]);
 
   // Pre-fill data when in edit mode
   useEffect(() => {
@@ -86,7 +86,7 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
       }
     })();
     return () => { alive = false; };
-  }, [targetId, category]);
+  }, [targetId, category, isEditMode]);
 
   // Tick countdown every second
   useEffect(() => {
