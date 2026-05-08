@@ -6,7 +6,7 @@ import { useI18n } from "../lib/i18n";
 import TopBar from "../components/TopBar";
 import InspectionForm from "./InspectionForm";
 import {
-  Gear, Wrench, Snowflake, ListChecks, ClipboardText, ArrowRight, ArrowLeft,
+  Gear, Wrench, Snowflake, ListChecks, ClipboardText, ArrowRight, ArrowLeft, PencilSimple,
 } from "@phosphor-icons/react";
 
 const BRANCH_GROUPS_BY_SPECIALTY = {
@@ -65,6 +65,16 @@ export default function TechDashboard() {
   const [branch, setBranch] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [history, setHistory] = useState([]);
+  const [editInspection, setEditInspection] = useState(null);
+
+  const EDIT_WINDOW_MS = 60 * 60 * 1000;
+  const canEdit = (h) => Date.now() - new Date(h.created_at).getTime() < EDIT_WINDOW_MS;
+
+  const startEdit = (h) => {
+    const panel_type = h.category === "panels_main" ? "main" : h.category === "panels_sub" ? "sub" : undefined;
+    setBranch({ category: h.category, target_type: h.target_type, panel_type });
+    setEditInspection(h);
+  };
 
   const loadHistory = async () => {
     try {
@@ -161,11 +171,12 @@ export default function TechDashboard() {
                       <th className="text-start px-4 py-3 font-semibold">{t("section")}</th>
                       <th className="text-start px-4 py-3 font-semibold">{t("target_number")}</th>
                       <th className="text-start px-4 py-3 font-semibold">{t("status")}</th>
+                      <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {history.length === 0 && (
-                      <tr><td colSpan="4" className="text-center text-slate-500 py-6">
+                      <tr><td colSpan="5" className="text-center text-slate-500 py-6">
                         {t("no_inspections_yet")}
                       </td></tr>
                     )}
@@ -188,6 +199,20 @@ export default function TechDashboard() {
                               {fails > 0 ? `${fails} ${t("fails_label")}` : t("healthy")}
                             </span>
                           </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => canEdit(h) && startEdit(h)}
+                              disabled={!canEdit(h)}
+                              title={canEdit(h) ? t("edit_inspection") : t("edit_window_expired")}
+                              className={`h-9 w-9 border flex items-center justify-center transition-colors ${
+                                canEdit(h)
+                                  ? "border-slate-200 text-slate-600 hover:bg-slate-100"
+                                  : "border-slate-100 text-slate-300 cursor-not-allowed"
+                              }`}
+                            >
+                              <PencilSimple size={14} />
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -199,8 +224,9 @@ export default function TechDashboard() {
         ) : (
           <InspectionForm
             branch={branch}
-            onBack={() => setBranch(null)}
-            onSubmitted={() => { setBranch(null); loadHistory(); }}
+            editInspection={editInspection}
+            onBack={() => { setBranch(null); setEditInspection(null); }}
+            onSubmitted={() => { setBranch(null); setEditInspection(null); loadHistory(); }}
           />
         )}
       </main>

@@ -144,6 +144,10 @@ const DICT = {
     group_b: "المجموعة B",
     select_group: "اختر المجموعة",
     drag_to_reorder: "اسحب لتغيير الترتيب",
+    edit_inspection: "تعديل الفحص",
+    edit_btn: "تعديل",
+    inspection_updated: "تم تحديث الفحص بنجاح",
+    edit_window_expired: "انتهت مهلة التعديل",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -288,6 +292,10 @@ const DICT = {
     group_b: "Group B",
     select_group: "Select Group",
     drag_to_reorder: "Drag to reorder",
+    edit_inspection: "Edit Inspection",
+    edit_btn: "Edit",
+    inspection_updated: "Inspection updated successfully",
+    edit_window_expired: "Edit window expired",
   },
 };
 

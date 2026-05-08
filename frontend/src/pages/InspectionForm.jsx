@@ -16,9 +16,10 @@ function formatHMS(sec) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export default function InspectionForm({ branch, onBack, onSubmitted }) {
+export default function InspectionForm({ branch, onBack, onSubmitted, editInspection = null }) {
   const { t, lang } = useI18n();
   const { category, target_type, group, panel_type } = branch;
+  const isEditing = !!editInspection;
   const [items, setItems] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [targetId, setTargetId] = useState("");
@@ -62,6 +63,22 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
     return () => { alive = false; };
   }, [targetId, category]);
 
+  // Pre-populate state when editing an existing inspection
+  useEffect(() => {
+    if (!editInspection) return;
+    setTargetId(editInspection.target_id || "");
+    setNotes(editInspection.notes || "");
+    const init = {};
+    for (const a of (editInspection.answers || [])) {
+      init[a.question_id] = {
+        answer: a.answer === null ? "na" : a.answer,
+        numeric_value: a.numeric_value !== null && a.numeric_value !== undefined ? a.numeric_value : undefined,
+        note: a.note || "",
+      };
+    }
+    setAnswers(init);
+  }, [editInspection]);
+
   // Tick countdown every second
   useEffect(() => {
     if (!cooldown?.in_cooldown) return;
@@ -92,24 +109,31 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
     [answers, questions],
   );
 
-  const inCooldown = !!cooldown?.in_cooldown;
+  const inCooldown = !isEditing && !!cooldown?.in_cooldown;
 
   const submit = async () => {
     if (!targetId) return toast.error(t("select_target"));
     if (inCooldown) return toast.error(t("cooldown_blocked"));
     if (completed < questions.length) return toast.error(t("required_all_answered"));
     setSubmitting(true);
+    const answersPayload = Object.entries(answers).map(([qid, v]) => ({
+      question_id: qid,
+      answer: v.answer === "na" ? null : v.answer !== undefined ? !!v.answer : null,
+      numeric_value: v.numeric_value !== undefined ? parseFloat(v.numeric_value) : null,
+      note: v.note || "",
+      skipped: v.answer === "na",
+    }));
     try {
-      await api.post("/inspections", {
-        category, target_type, target_id: targetId, notes,
-        answers: Object.entries(answers).map(([qid, v]) => ({
-          question_id: qid,
-          answer: v.answer !== undefined ? !!v.answer : null,
-          numeric_value: v.numeric_value !== undefined ? parseFloat(v.numeric_value) : null,
-          note: v.note || "",
-        })),
-      });
-      toast.success(t("inspection_saved"));
+      if (isEditing) {
+        await api.patch(`/inspections/${editInspection.id}`, { answers: answersPayload, notes });
+        toast.success(t("inspection_updated"));
+      } else {
+        await api.post("/inspections", {
+          category, target_type, target_id: targetId, notes, answers: answersPayload,
+        });
+        toast.success(t("inspection_saved"));
+        setCooldown({ in_cooldown: true, remaining_seconds: 3 * 3600, last_technician_name: null });
+      }
       onSubmitted?.();
     } catch (e) {
       toast.error(formatApiError(e));
@@ -139,7 +163,7 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
 
       <div className="mb-6">
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-          {t("new_inspection")} · {sectionLabelFinal}
+          {isEditing ? t("edit_inspection") : t("new_inspection")} · {sectionLabelFinal}
         </div>
       </div>
 
@@ -150,8 +174,9 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
           </label>
           <select
             value={targetId}
-            onChange={(e) => setTargetId(e.target.value)}
-            className="w-full h-14 mt-2 px-4 border border-slate-200 bg-white text-slate-900 text-lg focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
+            onChange={(e) => !isEditing && setTargetId(e.target.value)}
+            disabled={isEditing}
+            className={`w-full h-14 mt-2 px-4 border border-slate-200 bg-white text-slate-900 text-lg focus:outline-none focus:ring-2 focus:ring-[#005CBE] ${isEditing ? "opacity-70 cursor-not-allowed" : ""}`}
             data-testid="target-select"
           >
             <option value="">{t("select_target")}</option>
@@ -179,7 +204,7 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
         </div>
       </div>
 
-      {inCooldown && (
+      {!isEditing && inCooldown && (
         <div
           className="mb-6 bg-amber-50 border border-amber-300 p-5 flex items-start gap-4 fade-in"
           data-testid="cooldown-banner"
@@ -276,7 +301,7 @@ export default function InspectionForm({ branch, onBack, onSubmitted }) {
                 className="mt-4 h-14 px-8 bg-slate-900 text-white font-bold text-lg flex items-center gap-2 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                 data-testid="submit-inspection-button">
           <FloppyDisk size={20} weight="bold" />
-          <span>{submitting ? t("saving") : inCooldown ? t("cooldown_blocked_short") : t("save_inspection")}</span>
+          <span>{submitting ? t("saving") : inCooldown ? t("cooldown_blocked_short") : isEditing ? t("save_inspection") : t("save_inspection")}</span>
         </button>
       </div>
     </div>

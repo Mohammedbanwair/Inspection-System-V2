@@ -176,6 +176,11 @@ class InspectionCreate(BaseModel):
     notes: Optional[str] = ""
 
 
+class InspectionUpdate(BaseModel):
+    answers: List[AnswerIn]
+    notes: Optional[str] = ""
+
+
 class RegisterRequest(BaseModel):
     employee_number: str
     name: str
@@ -526,6 +531,7 @@ async def delete_question(qid: str, _=Depends(require_admin)):
 
 # ---------- Inspections ----------
 COOLDOWN_HOURS = 3
+EDIT_WINDOW_MIN = int(os.environ.get("EDIT_WINDOW_MIN", 60))
 
 
 def _parse_iso(s: str) -> datetime:
@@ -924,6 +930,29 @@ async def delete_inspection(iid: str, _=Depends(require_admin)):
     res = await db.inspections.delete_one({"id": iid})
     if res.deleted_count == 0: raise HTTPException(404, "غير موجود")
     return {"ok": True}
+
+
+@api.patch("/inspections/{iid}")
+async def edit_inspection(iid: str, body: InspectionUpdate, user=Depends(get_current_user)):
+    doc = await db.inspections.find_one({"id": iid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "الفحص غير موجود")
+    if doc["technician_id"] != user["id"]:
+        raise HTTPException(403, "يمكنك فقط تعديل فحوصاتك")
+    elapsed = (datetime.now(timezone.utc) - _parse_iso(doc["created_at"])).total_seconds()
+    if elapsed > EDIT_WINDOW_MIN * 60:
+        raise HTTPException(403, f"انتهت مهلة التعديل ({EDIT_WINDOW_MIN} دقيقة)")
+    await db.inspections.update_one(
+        {"id": iid},
+        {"$set": {
+            "answers": [a.model_dump() for a in body.answers],
+            "notes": body.notes or "",
+            "edited_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    updated = await db.inspections.find_one({"id": iid}, {"_id": 0})
+    updated.pop("_id", None)
+    return updated
 
 
 @api.get("/inspections/{iid}/export/pdf")
