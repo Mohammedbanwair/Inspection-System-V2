@@ -801,7 +801,7 @@ async def export_excel(
     category: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
-    _=Depends(require_admin),
+    admin_user=Depends(require_admin),
 ):
     from datetime import date as date_cls, timedelta
     import calendar
@@ -998,7 +998,7 @@ async def export_excel(
         rb.border = cb(left=thick, bottom=thick)
         ws.merge_cells(f"{get_column_letter(mid_ci)}{fr}:{last_col}{fr}")
         me = ws[f"{get_column_letter(mid_ci)}{fr}"]
-        me.value = "Maintenance Engineer:"
+        me.value = f"Maintenance Engineer:   {admin_user.get('name', '')}"
         me.font = Font(name="Arial", bold=True, size=11, color=PURPLE)
         me.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
         me.alignment = Alignment(horizontal="left", vertical="center", indent=1)
