@@ -27,7 +27,9 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
   const [answers, setAnswers] = useState({});
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [cooldown, setCooldown] = useState(null); // {in_cooldown, remaining_seconds, last_at, last_technician_name}
+  const [cooldown, setCooldown] = useState(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -102,12 +104,30 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
     return () => clearInterval(id);
   }, [cooldown?.in_cooldown]);
 
-  const setAnswer = (qid, v) =>
+  // Warn before browser tab close when there are unsaved answers
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  const handleBack = () => {
+    if (isDirty) { setShowExitDialog(true); } else { onBack(); }
+  };
+
+  const setAnswer = (qid, v) => {
+    setIsDirty(true);
     setAnswers((p) => ({ ...p, [qid]: { ...(p[qid] || {}), answer: v } }));
-  const setNumericValue = (qid, v) =>
+  };
+  const setNumericValue = (qid, v) => {
+    setIsDirty(true);
     setAnswers((p) => ({ ...p, [qid]: { ...(p[qid] || {}), numeric_value: v, answer: v !== "" ? true : undefined } }));
-  const setNoteFor = (qid, n) =>
+  };
+  const setNoteFor = (qid, n) => {
+    setIsDirty(true);
     setAnswers((p) => ({ ...p, [qid]: { ...(p[qid] || {}), note: n } }));
+  };
 
   const completed = useMemo(
     () => questions.filter((q) => {
@@ -149,6 +169,7 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
         toast.success(t("inspection_saved"));
         setCooldown({ in_cooldown: true, remaining_seconds: 15 * 60, last_technician_name: null });
       }
+      setIsDirty(false);
       onSubmitted?.();
     } catch (e) {
       toast.error(formatApiError(e));
@@ -167,8 +188,31 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
 
   return (
     <div className="fade-in" data-testid="inspection-form">
+      {/* Exit confirmation dialog */}
+      {showExitDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 fade-in"
+             onClick={() => setShowExitDialog(false)}>
+          <div className="bg-white border border-slate-200 p-6 max-w-sm w-full mx-4 shadow-xl"
+               onClick={(e) => e.stopPropagation()}>
+            <p className="text-slate-900 font-semibold text-base mb-6 leading-relaxed">
+              {t("exit_warning")}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowExitDialog(false)}
+                      className="h-10 px-5 border border-slate-200 text-slate-700 font-semibold hover:bg-slate-100">
+                {t("stay_and_save")}
+              </button>
+              <button onClick={onBack}
+                      className="h-10 px-5 bg-red-600 text-white font-semibold hover:bg-red-700">
+                {t("exit_without_save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <button
-        onClick={onBack}
+        onClick={handleBack}
         className="h-10 px-4 mb-4 bg-white border border-slate-200 text-slate-700 font-semibold hover:bg-slate-100 flex items-center gap-2"
         data-testid="back-button"
       >
