@@ -7,9 +7,18 @@ import TopBar from "../components/TopBar";
 import InspectionForm from "./InspectionForm";
 import {
   Gear, Wrench, Snowflake, ListChecks, ClipboardText, ArrowRight, ArrowLeft, PencilSimple,
+  CheckSquare, WarningCircle, Timer,
 } from "@phosphor-icons/react";
 
 const EDIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function timeAgo(dateStr, lang) {
+  const mins = Math.floor((Date.now() - new Date(dateStr)) / 60000);
+  if (mins < 60) return lang === "ar" ? `منذ ${mins} دقيقة` : `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return lang === "ar" ? `منذ ${hrs} ساعة` : `${hrs} hr ago`;
+  return new Date(dateStr).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US");
+}
 
 const BRANCH_GROUPS_BY_SPECIALTY = {
   electrical: [
@@ -94,6 +103,16 @@ export default function TechDashboard() {
   const branchGroups = BRANCH_GROUPS_BY_SPECIALTY[user?.specialty] || [];
   const Arrow = lang === "ar" ? ArrowLeft : ArrowRight;
 
+  const todayStr = new Date().toDateString();
+  const todayInspections = history.filter(
+    (h) => new Date(h.created_at).toDateString() === todayStr,
+  );
+  const todayCount = todayInspections.length;
+  const todayFails = todayInspections.reduce(
+    (sum, h) => sum + (h.answers || []).filter((a) => a.answer === false).length, 0,
+  );
+  const lastInspection = history[0] || null;
+
   return (
     <div className="min-h-screen" data-testid="tech-dashboard">
       <TopBar />
@@ -108,6 +127,42 @@ export default function TechDashboard() {
                 {t("welcome")} {user?.name}
               </h1>
               <p className="text-sm text-slate-500 mt-1">{t("choose_section")}</p>
+            </div>
+
+            {/* Daily Summary */}
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="bg-white border border-slate-200 p-4 flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-slate-500">
+                  <CheckSquare size={15} weight="bold" />
+                  <span className="text-xs font-semibold uppercase tracking-widest">{t("today_inspections_count")}</span>
+                </div>
+                <div className="text-3xl font-bold text-slate-900 mt-1">{todayCount}</div>
+              </div>
+              <div className="bg-white border border-slate-200 p-4 flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-slate-500">
+                  <WarningCircle size={15} weight="bold" />
+                  <span className="text-xs font-semibold uppercase tracking-widest">{t("today_fails_count")}</span>
+                </div>
+                <div className={`text-3xl font-bold mt-1 ${todayFails > 0 ? "text-red-600" : "text-slate-900"}`}>
+                  {todayFails}
+                </div>
+              </div>
+              <div className="bg-white border border-slate-200 p-4 flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-slate-500">
+                  <Timer size={15} weight="bold" />
+                  <span className="text-xs font-semibold uppercase tracking-widest">{t("last_inspection_label")}</span>
+                </div>
+                {lastInspection ? (
+                  <>
+                    <div className="text-sm font-bold text-slate-900 mt-1 truncate">
+                      {lastInspection.target_number}
+                    </div>
+                    <div className="text-xs text-slate-500">{timeAgo(lastInspection.created_at, lang)}</div>
+                  </>
+                ) : (
+                  <div className="text-xs text-slate-400 mt-2">{t("no_inspections_today")}</div>
+                )}
+              </div>
             </div>
 
             {selectedGroup ? (
