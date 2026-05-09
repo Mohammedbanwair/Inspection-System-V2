@@ -185,7 +185,7 @@ export default function TechDashboard() {
                       </td></tr>
                     )}
                     {history.map((h) => {
-                      const fails = (h.answers || []).filter((a) => !a.answer).length;
+                      const fails = (h.answers || []).filter((a) => a.answer === false).length;
                       const catKey = h.category === "electrical" ? "cat_electrical" :
                         h.category === "mechanical" ? "cat_mechanical" :
                         h.category === "chiller" ? "cat_chiller" :

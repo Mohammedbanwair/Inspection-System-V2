@@ -1158,7 +1158,7 @@ def _expand_answers(answers: list) -> list:
                 "answer": a.get("a"),
                 "numeric_value": a.get("nv"),
                 "note": a.get("n", ""),
-                "skipped": False,
+                "skipped": a.get("a") is None,
             })
         else:
             result.append(a)
