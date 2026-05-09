@@ -301,7 +301,7 @@ export default function Inspections() {
               <tr><td colSpan="7" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
             )}
             {list.map((r, i) => {
-              const fails = (r.answers || []).filter((a) => !a.answer).length;
+              const fails = (r.answers || []).filter((a) => a.answer === false).length;
               return (
                 <tr key={r.id} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
                   <td className="px-4 py-3">{new Date(r.created_at).toLocaleString(ar ? "ar-EG" : "en-US")}</td>
