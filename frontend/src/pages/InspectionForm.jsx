@@ -38,21 +38,24 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
         if (group) params.group = group;
         if (panel_type) params.panel_type = panel_type;
         const itemsCacheKey = `${TARGET_API[target_type]}?${new URLSearchParams(params)}`;
-        const [itemsData, questionsData] = await Promise.all([
+        const fetches = [
           withCache(itemsCacheKey, () => api.get(TARGET_API[target_type], { params }).then((r) => r.data)),
           withCache(`questions:${category}`, () => api.get("/questions", { params: { category } }).then((r) => r.data)),
-        ]);
-        const t1 = { data: itemsData };
-        const q = { data: questionsData };
-        setItems(t1.data);
-        setQuestions(q.data);
-        // Auto-select if only one item exists
-        if (t1.data.length === 1) setTargetId(t1.data[0].id);
+        ];
+        if (!isEditMode) {
+          fetches.push(api.get("/inspections/locked-targets", { params: { category } }).then((r) => r.data));
+        }
+        const [itemsData, questionsData, lockedData] = await Promise.all(fetches);
+        const lockedSet = new Set((lockedData?.locked) || []);
+        const availableItems = isEditMode ? itemsData : itemsData.filter((item) => !lockedSet.has(item.id));
+        setItems(availableItems);
+        setQuestions(questionsData);
+        if (availableItems.length === 1) setTargetId(availableItems[0].id);
       } catch (e) {
         toast.error(formatApiError(e));
       }
     })();
-  }, [category, target_type, group, panel_type]);
+  }, [category, target_type, group, panel_type, isEditMode]);
 
   // Pre-fill data when in edit mode
   useEffect(() => {
