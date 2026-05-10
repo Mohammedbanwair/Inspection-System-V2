@@ -695,6 +695,19 @@ async def cooldown(target_id: str, category: str, _=Depends(get_current_user)):
     }
 
 
+LOCK_HOURS = 12
+
+@api.get("/inspections/locked-targets")
+async def locked_targets(category: str, _=Depends(get_current_user)):
+    """Return target_ids inspected by any technician within the last 12 hours."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=LOCK_HOURS)).isoformat()
+    docs = await db.inspections.find(
+        {"category": category, "created_at": {"$gte": cutoff}},
+        {"_id": 0, "target_id": 1},
+    ).to_list(1000)
+    return {"locked": list({d["target_id"] for d in docs})}
+
+
 @api.post("/inspections")
 async def create_inspection(body: InspectionCreate, user=Depends(get_current_user)):
     if body.category not in allowed_categories(user):

@@ -91,7 +91,7 @@ export default function TechDashboard() {
 
   const loadHistory = async () => {
     try {
-      const { data } = await api.get("/inspections", { params: { limit: 10 } });
+      const { data } = await api.get("/inspections");
       setHistory(data);
     } catch (e) {
       toast.error(formatApiError(e));
@@ -250,7 +250,10 @@ export default function TechDashboard() {
                       return (
                         <tr key={h.id} className="border-t border-slate-100">
                           <td className="px-4 py-3">
-                            {new Date(h.created_at).toLocaleString(lang === "ar" ? "ar-EG" : "en-US")}
+                            {new Date(h.created_at).toLocaleString(lang === "ar" ? "ar-EG" : "en-US", {
+                              year: "numeric", month: "numeric", day: "numeric",
+                              hour: "numeric", hour12: true,
+                            })}
                           </td>
                           <td className="px-4 py-3">{catLabel}</td>
                           <td className="px-4 py-3 font-semibold">{h.target_number}</td>
