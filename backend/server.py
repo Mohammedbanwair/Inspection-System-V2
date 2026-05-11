@@ -1266,16 +1266,24 @@ async def export_pdf(iid: str, _=Depends(require_admin)):
 
 @api.get("/inspections/{iid}/export/preventive-pdf")
 async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
-    doc = await db.inspections.find_one({"id": iid}, {"_id": 0})
-    if not doc: raise HTTPException(404, "غير موجود")
-    if doc.get("category") != "preventive":
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+        Image as PLImage, KeepTogether,
+    )
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+    doc_data = await db.inspections.find_one({"id": iid}, {"_id": 0})
+    if not doc_data: raise HTTPException(404, "غير موجود")
+    if doc_data.get("category") != "preventive":
         raise HTTPException(400, "هذا ليس فحص صيانة وقائية")
 
     questions = await db.questions.find(
         {"category": "preventive"}, {"_id": 0}
     ).sort([("order", 1)]).to_list(200)
 
-    expanded = _expand_answers(doc.get("answers", []))
+    expanded = _expand_answers(doc_data.get("answers", []))
     answers_map = {a["question_id"]: a for a in expanded}
 
     sections: dict = {}
@@ -1287,93 +1295,223 @@ async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
             section_order.append(sec)
         sections[sec].append(q)
 
+    # ── Colors ────────────────────────────────────────────────────
+    PURPLE       = rl_colors.HexColor('#6B2D6B')
+    DARK_PURPLE  = rl_colors.HexColor('#4A1442')
+    PURPLE_LIGHT = rl_colors.HexColor('#EDE0ED')
+    WHITE        = rl_colors.white
+    BLACK        = rl_colors.black
+    GREEN_FG     = rl_colors.HexColor('#1B5E20')
+    GREEN_BG     = rl_colors.HexColor('#E8F5E9')
+    RED_FG       = rl_colors.HexColor('#B71C1C')
+    RED_BG       = rl_colors.HexColor('#FFEBEE')
+    GREY         = rl_colors.HexColor('#757575')
+    LIGHT_GREY   = rl_colors.HexColor('#F5F5F5')
+    MID_GREY     = rl_colors.HexColor('#CCCCCC')
+
+    date_str     = doc_data.get("created_at", "")[:10]
+    machine_no   = doc_data.get("target_number", "")
+    machine_name = doc_data.get("target_name", "") or ""
+    tech_name    = doc_data.get("technician_name", "")
+    notes_text   = doc_data.get("notes", "") or ""
+
     buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    width, height = A4
+    pw, ph = A4
+    LM = RM = 1.5 * cm
+    USABLE = pw - LM - RM   # ~18 cm
+
+    # ── Paragraph helpers ─────────────────────────────────────────
+    def ps(name, font="Helvetica", size=9, bold=False, align=TA_LEFT, color=BLACK, leading=None):
+        return ParagraphStyle(
+            name, fontName="Helvetica-Bold" if bold else font,
+            fontSize=size, leading=leading or size * 1.35,
+            textColor=color, alignment=align,
+        )
+
+    p_title   = ps("t", size=13, bold=True, color=PURPLE, align=TA_CENTER)
+    p_sub     = ps("s", size=10, bold=True, color=DARK_PURPLE, align=TA_CENTER)
+    p_info    = ps("i", size=9)
+    p_hdr     = ps("h", size=9, bold=True, color=WHITE, align=TA_CENTER)
+    p_sec     = ps("se", size=10, bold=True, color=WHITE)
+    p_num     = ps("n", size=9, align=TA_CENTER)
+    p_text    = ps("tx", size=9)
+    p_ok      = ps("ok", size=13, bold=True, color=GREEN_FG, align=TA_CENTER)
+    p_fail    = ps("fl", size=13, bold=True, color=RED_FG, align=TA_CENTER)
+    p_na      = ps("na", size=8, bold=True, color=GREY, align=TA_CENTER)
+    p_note    = ps("nt", size=8, color=GREY)
+
+    # ── Document ──────────────────────────────────────────────────
+    doc_obj = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=LM, rightMargin=RM,
+        topMargin=1.5 * cm, bottomMargin=2.0 * cm,
+    )
+    story = []
+
+    # ── HEADER: logo + title + info ───────────────────────────────
     LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
-    PURPLE = (0.42, 0.18, 0.42)
+    logo_cell = PLImage(LOGO_PATH, width=3.5*cm, height=2.0*cm, kind='proportional') \
+                if os.path.exists(LOGO_PATH) else Paragraph("", p_info)
 
-    y = height - 1.5 * cm
-    # Logo
-    if os.path.exists(LOGO_PATH):
-        from reportlab.lib.units import cm as rcm
-        c.drawImage(LOGO_PATH, 2 * cm, y - 1.2 * cm, width=4 * cm, height=1.2 * cm,
-                    preserveAspectRatio=True, mask="auto")
-    c.setFont("Helvetica-Bold", 16)
-    c.setFillColorRGB(*PURPLE)
-    c.drawCentredString(width / 2, y, "Preventive Maintenance Inspection")
-    y -= 0.8 * cm
-    c.setFillColorRGB(0, 0, 0)
-    c.setFont("Helvetica", 11)
-    date_str = doc["created_at"][:10]
-    c.drawString(2 * cm, y, f"Machine #: {doc.get('target_number', '')}  —  {doc.get('target_name', '')}")
-    c.drawRightString(width - 2 * cm, y, f"Date: {date_str}")
-    y -= 0.5 * cm
-    c.drawString(2 * cm, y, f"Technician: {doc.get('technician_name', '')}")
-    y -= 0.9 * cm
+    title_block = [
+        Paragraph("Hydraulic Injection Machine", p_title),
+        Spacer(1, 3),
+        Paragraph("PREVENTIVE MAINTENANCE CHECKLIST", p_sub),
+    ]
 
-    c.setStrokeColorRGB(*PURPLE)
-    c.setLineWidth(1.5)
-    c.line(2 * cm, y, width - 2 * cm, y)
-    y -= 0.5 * cm
+    hw = [USABLE * 0.26, USABLE * 0.74]
+    header_tbl = Table(
+        [[logo_cell, title_block],
+         [Paragraph(f"<b>Date:</b>  {date_str}", p_info),
+          Paragraph(f"<b>Machine No.:</b>  {machine_no} &nbsp;&nbsp;&nbsp; <b>Model:</b>  {machine_name}", p_info)],
+         [Paragraph(f"<b>Shift:</b>", p_info),
+          Paragraph(f"<b>Technician:</b>  {tech_name}", p_info)]],
+        colWidths=hw,
+    )
+    header_tbl.setStyle(TableStyle([
+        ('BOX',        (0, 0), (-1, -1), 1.0, MID_GREY),
+        ('INNERGRID',  (0, 0), (-1, -1), 0.3, MID_GREY),
+        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN',      (0, 0), (0, 0),   'CENTER'),
+        ('BACKGROUND', (0, 0), (-1, 0),  LIGHT_GREY),
+        ('ROWSPAN',    (0, 0), (0, 0),   1),   # logo
+        ('SPAN',       (0, 0), (0, 0)),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 7),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 7),
+    ]))
+    story.append(header_tbl)
+    story.append(Spacer(1, 0.25 * cm))
+
+    # ── CHECKLIST TABLE ───────────────────────────────────────────
+    COL_N  = 0.85 * cm
+    COL_R  = 2.1  * cm
+    COL_T  = USABLE - COL_N - COL_R
+    col_ws = [COL_N, COL_T, COL_R]
+
+    rows = []
+    styles = [
+        ('BOX',         (0, 0), (-1, -1), 1.0, PURPLE),
+        ('INNERGRID',   (0, 0), (-1, -1), 0.3, MID_GREY),
+        ('VALIGN',      (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING',  (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING',(0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING',(0, 0), (-1, -1), 5),
+    ]
+
+    # Column header
+    rows.append([Paragraph("م", p_hdr), Paragraph("CHECK  POINTS", p_hdr), Paragraph("OK / FAIL", p_hdr)])
+    styles += [
+        ('BACKGROUND', (0, 0), (-1, 0), DARK_PURPLE),
+        ('ALIGN',      (0, 0), (-1, 0), 'CENTER'),
+        ('LINEBELOW',  (0, 0), (-1, 0), 1.5, PURPLE),
+    ]
+
+    row_i = 1
+    local_q = 0  # counter across all rows for alt-stripe
 
     for sec in section_order:
-        # Section header bar
-        c.setFillColorRGB(*PURPLE)
-        c.rect(2 * cm, y - 0.35 * cm, width - 4 * cm, 0.7 * cm, fill=1, stroke=0)
-        c.setFillColorRGB(1, 1, 1)
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(2.4 * cm, y - 0.15 * cm, sec)
-        y -= 1.0 * cm
+        # Section header spans all columns
+        rows.append([Paragraph("", p_sec),
+                     Paragraph(f"   {sec.upper()}", p_sec),
+                     Paragraph("", p_sec)])
+        r = row_i
+        styles += [
+            ('SPAN',       (0, r), (-1, r)),
+            ('BACKGROUND', (0, r), (-1, r), PURPLE),
+            ('LINEABOVE',  (0, r), (-1, r), 0.5, DARK_PURPLE),
+            ('TOPPADDING',    (0, r), (-1, r), 5),
+            ('BOTTOMPADDING', (0, r), (-1, r), 5),
+        ]
+        row_i += 1
 
-        for q in sections[sec]:
+        for i, q in enumerate(sections[sec]):
+            local_q += 1
             a = answers_map.get(q["id"])
             if a is None or a.get("skipped"):
-                mark = "N/A"
-                c.setFillColorRGB(0.5, 0.5, 0.5)
+                result_p = Paragraph("N/A", p_na)
+                bg = None
             elif a.get("answer"):
-                mark = "✓"
-                c.setFillColorRGB(0.11, 0.53, 0.22)
+                result_p = Paragraph("✓", p_ok)
+                bg = GREEN_BG
             else:
-                mark = "✗"
-                c.setFillColorRGB(0.75, 0.1, 0.1)
-            c.setFont("Helvetica-Bold", 13)
-            c.drawString(2.5 * cm, y, mark)
-            c.setFillColorRGB(0, 0, 0)
-            c.setFont("Helvetica", 10)
-            c.drawString(3.6 * cm, y, q.get("text", "")[:90])
-            if a and a.get("note"):
-                y -= 0.4 * cm
-                c.setFont("Helvetica-Oblique", 9)
-                c.setFillColorRGB(0.4, 0.4, 0.4)
-                c.drawString(3.6 * cm, y, f"Note: {a['note'][:80]}")
-                c.setFillColorRGB(0, 0, 0)
-            y -= 0.55 * cm
-            if y < 2.5 * cm:
-                c.showPage()
-                y = height - 2 * cm
+                result_p = Paragraph("✗", p_fail)
+                bg = RED_BG
 
-        y -= 0.4 * cm
+            # Question text (+ note if fail)
+            q_text = q.get("text", "")
+            if a and a.get("note") and not a.get("skipped"):
+                text_p = Paragraph(
+                    f'{q_text}<br/><font size="8" color="#757575"> ↳ Note: {a["note"]}</font>',
+                    p_text,
+                )
+            else:
+                text_p = Paragraph(q_text, p_text)
 
-    if doc.get("notes"):
-        if y < 4 * cm:
-            c.showPage()
-            y = height - 2 * cm
-        c.setFillColorRGB(*PURPLE)
-        c.rect(2 * cm, y - 0.35 * cm, width - 4 * cm, 0.7 * cm, fill=1, stroke=0)
-        c.setFillColorRGB(1, 1, 1)
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(2.4 * cm, y - 0.15 * cm, "General Notes")
-        y -= 1.0 * cm
-        c.setFillColorRGB(0, 0, 0)
-        c.setFont("Helvetica", 10)
-        c.drawString(2.5 * cm, y, doc["notes"][:120])
-        y -= 0.6 * cm
+            rows.append([Paragraph(str(i + 1), p_num), text_p, result_p])
+            r = row_i
+            if bg:
+                styles.append(('BACKGROUND', (0, r), (-1, r), bg))
+            elif local_q % 2 == 0:
+                styles.append(('BACKGROUND', (0, r), (-1, r), LIGHT_GREY))
+            styles += [
+                ('ALIGN', (0, r), (0, r), 'CENTER'),
+                ('ALIGN', (2, r), (2, r), 'CENTER'),
+            ]
+            row_i += 1
 
-    c.showPage()
-    c.save()
+    checklist_tbl = Table(rows, colWidths=col_ws, repeatRows=1)
+    checklist_tbl.setStyle(TableStyle(styles))
+    story.append(checklist_tbl)
+    story.append(Spacer(1, 0.3 * cm))
+
+    # ── REMARKS ───────────────────────────────────────────────────
+    rw = [3.0 * cm, USABLE - 3.0 * cm]
+    remarks_tbl = Table(
+        [[Paragraph("<b>Remarks:</b>", p_info), Paragraph(notes_text or "—", p_info)],
+         [Paragraph("<b>Spare parts:</b>", p_info), Paragraph("—", p_info)]],
+        colWidths=rw,
+    )
+    remarks_tbl.setStyle(TableStyle([
+        ('BOX',       (0, 0), (-1, -1), 0.5, MID_GREY),
+        ('INNERGRID', (0, 0), (-1, -1), 0.3, MID_GREY),
+        ('BACKGROUND',(0, 0), (0, -1),  LIGHT_GREY),
+        ('VALIGN',    (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 6),
+    ]))
+    story.append(remarks_tbl)
+    story.append(Spacer(1, 0.3 * cm))
+
+    # ── SIGNATURE ROW ─────────────────────────────────────────────
+    sw = USABLE / 3.0
+    sig_tbl = Table([[
+        Paragraph("<b>TIME M/C Received:</b><br/><br/>__________________", p_info),
+        Paragraph("<b>Delivery Time:</b><br/><br/>__________________", p_info),
+        Paragraph(
+            "<b>Maintenance Engineer:</b><br/><br/>__________________"
+            "<br/><br/><b>Production Engineer:</b><br/><br/>__________________",
+            p_info,
+        ),
+    ]], colWidths=[sw, sw, sw])
+    sig_tbl.setStyle(TableStyle([
+        ('BOX',       (0, 0), (-1, -1), 0.5, MID_GREY),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, MID_GREY),
+        ('VALIGN',    (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING',    (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 8),
+    ]))
+    story.append(sig_tbl)
+
+    doc_obj.build(story)
     buf.seek(0)
-    fname = f"preventive_{doc.get('target_number', '')}_{doc['created_at'][:10]}.pdf"
+    fname = f"preventive_{machine_no}_{date_str}.pdf"
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="application/pdf",
