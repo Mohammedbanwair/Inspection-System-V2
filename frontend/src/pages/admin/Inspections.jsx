@@ -7,6 +7,7 @@ import { Eye, FilePdf, Trash, X, FileXls } from "@phosphor-icons/react";
 const CAT_KEY = {
   electrical: "cat_electrical", mechanical: "cat_mechanical",
   chiller: "cat_chiller", panels_main: "cat_panels_main", panels_sub: "cat_panels_sub",
+  cooling_tower: "cat_cooling_tower", preventive: "cat_preventive",
 };
 
 export default function Inspections() {
@@ -26,10 +27,13 @@ export default function Inspections() {
   const [items, setItems]       = useState([]);  // dropdown items fetched from API
 
   // Derived values
-  const tTypeOptions = spec === "electrical" ? ["machine", "panel"]
-                     : spec === "mechanical" ? ["machine", "chiller"] : [];
+  const isSpecial = spec === "cooling_tower" || spec === "preventive";
 
-  const needsSubGroup = tType === "machine" || tType === "panel";
+  const tTypeOptions = spec === "electrical" ? ["machine", "panel"]
+                     : spec === "mechanical" ? ["machine", "chiller"]
+                     : [];
+
+  const needsSubGroup = !isSpecial && (tType === "machine" || tType === "panel");
 
   const subGroupOptions = tType === "machine"
     ? [{ value: "A", label: t("group_a") }, { value: "B", label: t("group_b") }]
@@ -38,6 +42,8 @@ export default function Inspections() {
     : [];
 
   const category = (() => {
+    if (spec === "cooling_tower") return "cooling_tower";
+    if (spec === "preventive")    return "preventive";
     if (spec === "electrical") {
       if (tType === "machine") return "electrical";
       if (tType === "panel" && subGroup === "main") return "panels_main";
@@ -50,10 +56,20 @@ export default function Inspections() {
     return "";
   })();
 
-  const step4Ready = tType && (!needsSubGroup || subGroup);
+  const step4Ready = isSpecial ? true : (tType && (!needsSubGroup || subGroup));
 
-  // Fetch equipment list whenever type or sub-group changes
+  // Fetch equipment list whenever spec/type/sub-group changes
   useEffect(() => {
+    if (spec === "cooling_tower") {
+      api.get("/cooling-towers").then(({ data }) => setItems(data)).catch(() => setItems([]));
+      setTargetNum("");
+      return;
+    }
+    if (spec === "preventive") {
+      api.get("/machines").then(({ data }) => setItems(data)).catch(() => setItems([]));
+      setTargetNum("");
+      return;
+    }
     if (!tType) { setItems([]); return; }
     const endpoint = tType === "machine" ? "/machines"
                    : tType === "panel"   ? "/panels"
@@ -65,7 +81,7 @@ export default function Inspections() {
       .then(({ data }) => setItems(data))
       .catch(() => setItems([]));
     setTargetNum("");
-  }, [tType, subGroup]);
+  }, [spec, tType, subGroup]);
 
   const getApiFilters = () => {
     const f = {};
@@ -165,7 +181,10 @@ export default function Inspections() {
     catch (e) { toast.error(formatApiError(e)); }
   };
 
-  const typeLabel = (x) => t(x === "machine" ? "machine" : x === "chiller" ? "chiller" : "panel");
+  const typeLabel = (x) => t(
+    x === "machine" ? "machine" : x === "chiller" ? "chiller" :
+    x === "cooling_tower" ? "cooling_tower" : "panel"
+  );
 
   const ar = lang === "ar";
 
@@ -188,25 +207,27 @@ export default function Inspections() {
               <option value="">{ar ? "— اختر —" : "— Select —"}</option>
               <option value="electrical">{t("cat_electrical")}</option>
               <option value="mechanical">{t("cat_mechanical")}</option>
+              <option value="cooling_tower">{t("cat_cooling_tower")}</option>
+              <option value="preventive">{t("cat_preventive")}</option>
             </select>
           </div>
 
-          {/* Step 2: Equipment type */}
+          {/* Step 2: Equipment type (hidden for special specs) */}
           <div className="flex flex-col gap-1">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
               {ar ? "٢ — نوع المعدة" : "2 — Equipment"}
             </span>
             <select value={tType}
                     onChange={e => { setTType(e.target.value); setSubGroup(""); setTargetNum(""); }}
-                    disabled={!spec}
+                    disabled={!spec || isSpecial}
                     className="h-11 px-3 border border-slate-200 disabled:opacity-40"
                     data-testid="filter-type-select">
-              <option value="">{ar ? "— اختر —" : "— Select —"}</option>
+              <option value="">{isSpecial ? (ar ? "—" : "—") : (ar ? "— اختر —" : "— Select —")}</option>
               {tTypeOptions.map(tp => <option key={tp} value={tp}>{typeLabel(tp)}</option>)}
             </select>
           </div>
 
-          {/* Step 3: Sub-group / panel type */}
+          {/* Step 3: Sub-group / panel type (hidden for special specs) */}
           <div className="flex flex-col gap-1">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
               {tType === "machine" ? (ar ? "٣ — المجموعة" : "3 — Group")
@@ -215,7 +236,7 @@ export default function Inspections() {
             </span>
             <select value={subGroup}
                     onChange={e => { setSubGroup(e.target.value); setTargetNum(""); }}
-                    disabled={!tType || !needsSubGroup}
+                    disabled={isSpecial || !tType || !needsSubGroup}
                     className="h-11 px-3 border border-slate-200 disabled:opacity-40"
                     data-testid="filter-subgroup-select">
               <option value="">{needsSubGroup ? (ar ? "— اختر —" : "— Select —") : (ar ? "—" : "—")}</option>
@@ -232,7 +253,7 @@ export default function Inspections() {
             </span>
             <select value={targetNum}
                     onChange={e => setTargetNum(e.target.value)}
-                    disabled={!step4Ready}
+                    disabled={!spec}
                     className="h-11 px-3 border border-slate-200 disabled:opacity-40"
                     data-testid="filter-target-select">
               <option value="">{ar ? "— اختر المعدة —" : "— Select Equipment —"}</option>
@@ -249,15 +270,15 @@ export default function Inspections() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <input type="date" value={dateFrom}
                  onChange={e => setDateFrom(e.target.value)}
-                 disabled={!step4Ready}
+                 disabled={!spec}
                  className="h-11 px-3 border border-slate-200 disabled:opacity-40"
                  data-testid="filter-date-from" />
           <input type="date" value={dateTo}
                  onChange={e => setDateTo(e.target.value)}
-                 disabled={!step4Ready}
+                 disabled={!spec}
                  className="h-11 px-3 border border-slate-200 disabled:opacity-40"
                  data-testid="filter-date-to" />
-          <button type="submit" disabled={!step4Ready}
+          <button type="submit" disabled={!spec}
                   className="h-11 px-4 bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-40"
                   data-testid="apply-filters-button">
             {t("apply")}

@@ -32,7 +32,7 @@ export default function Users() {
     setEditing(u);
     setForm({
       employee_number: u.employee_number || "", name: u.name, password: "",
-      role: u.role, specialty: u.specialty || "electrical",
+      role: u.role, specialty: u.specialty || (u.role === "technician" ? "electrical" : ""),
     });
     setShowForm(true);
   };
@@ -51,6 +51,7 @@ export default function Users() {
           password: form.password, role: form.role,
         };
         if (form.role === "technician") body.specialty = form.specialty;
+        // helper role: no specialty needed
         await api.post("/users", body);
       }
       toast.success(t("save"));
@@ -66,6 +67,7 @@ export default function Users() {
   };
 
   const isTech = form.role === "technician";
+  const isHelper = form.role === "helper";
 
   return (
     <div data-testid="users-panel">
@@ -106,6 +108,7 @@ export default function Users() {
                   className="h-12 px-3 border border-slate-200" data-testid="user-role-select">
             <option value="technician">{t("tech_role")}</option>
             <option value="admin">{t("admin_role")}</option>
+            <option value="helper">{t("helper_role")}</option>
           </select>
           {isTech ? (
             <select value={form.specialty}
@@ -147,8 +150,12 @@ export default function Users() {
                 <td className="px-4 py-3">{u.name}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-1 text-xs font-semibold ${
-                    u.role === "admin" ? "bg-[#005CBE] text-white" : "bg-slate-100 text-slate-700"}`}>
-                    {u.role === "admin" ? t("admin_role") : t("tech_role")}
+                    u.role === "admin" ? "bg-[#005CBE] text-white"
+                    : u.role === "helper" ? "bg-[#6B2D6B] text-white"
+                    : "bg-slate-100 text-slate-700"}`}>
+                    {u.role === "admin" ? t("admin_role")
+                     : u.role === "helper" ? t("helper_role")
+                     : t("tech_role")}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-600">

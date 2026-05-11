@@ -7,8 +7,65 @@ import {
   CheckCircle, XCircle, MinusCircle, FloppyDisk, ArrowLeft, ArrowRight, Clock,
 } from "@phosphor-icons/react";
 
-const TARGET_LABEL_KEY = { machine: "machine_number", chiller: "chiller_number", panel: "panel_number" };
-const TARGET_API = { machine: "/machines", chiller: "/chillers", panel: "/panels" };
+const TARGET_LABEL_KEY = { machine: "machine_number", chiller: "chiller_number", panel: "panel_number", cooling_tower: "cooling_tower_number" };
+const TARGET_API = { machine: "/machines", chiller: "/chillers", panel: "/panels", cooling_tower: "/cooling-towers" };
+const NO_COOLDOWN_CATS = new Set(["cooling_tower", "preventive"]);
+
+function QuestionCard({ q, idx, answers, setAnswer, setNumericValue, setNoteFor, t }) {
+  const curr = answers[q.id];
+  const isNumeric = q.answer_type === "numeric";
+  return (
+    <div className="bg-white border border-slate-200 p-5">
+      <div className="mb-4">
+        <span className="text-xs font-semibold text-slate-500">{idx + 1}.</span>
+        <p className="text-lg font-semibold text-slate-900 mt-1 leading-relaxed">{q.text}</p>
+      </div>
+      {isNumeric ? (
+        <div className="flex items-center gap-3">
+          <input
+            type="number" step="0.1" placeholder="0.0"
+            value={curr?.numeric_value ?? ""}
+            onChange={(e) => setNumericValue(q.id, e.target.value)}
+            className="w-36 h-12 px-4 text-xl font-bold border-2 border-slate-200 focus:outline-none focus:border-[#6B2D6B] text-center"
+            data-testid={`q-${q.id}-numeric`}
+          />
+          <span className="text-lg font-semibold text-[#6B2D6B]">{q.unit || "°C"}</span>
+          {curr?.numeric_value !== undefined && curr?.numeric_value !== "" && (
+            <span className="text-emerald-600 text-sm font-semibold">✓</span>
+          )}
+        </div>
+      ) : (
+        <div className="flex gap-0">
+          <button type="button" onClick={() => setAnswer(q.id, true)}
+                  className={`seg-btn ${curr?.answer === true ? "active-yes" : ""}`}
+                  data-testid={`q-${q.id}-yes`}>
+            <CheckCircle size={22} weight="bold" />
+            <span>{t("yes")}</span>
+          </button>
+          <button type="button" onClick={() => setAnswer(q.id, false)}
+                  className={`seg-btn ${curr?.answer === false ? "active-no" : ""}`}
+                  data-testid={`q-${q.id}-no`}>
+            <XCircle size={22} weight="bold" />
+            <span>{t("no")}</span>
+          </button>
+          <button type="button" onClick={() => setAnswer(q.id, "na")}
+                  className={`seg-btn ${curr?.answer === "na" ? "active-na" : ""}`}
+                  data-testid={`q-${q.id}-na`}>
+            <MinusCircle size={22} weight="bold" />
+            <span>N/A</span>
+          </button>
+        </div>
+      )}
+      {!isNumeric && curr?.answer === false && (
+        <input type="text" placeholder={t("note_optional")}
+               value={curr?.note || ""}
+               onChange={(e) => setNoteFor(q.id, e.target.value)}
+               className="w-full h-11 mt-3 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
+               data-testid={`q-${q.id}-note`} />
+      )}
+    </div>
+  );
+}
 
 function formatHMS(sec) {
   const h = Math.floor(sec / 3600);
@@ -42,12 +99,15 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
           withCache(itemsCacheKey, () => api.get(TARGET_API[target_type], { params }).then((r) => r.data)),
           withCache(`questions:${category}`, () => api.get("/questions", { params: { category } }).then((r) => r.data)),
         ];
-        if (!isEditMode) {
+        if (!isEditMode && !NO_COOLDOWN_CATS.has(category)) {
           fetches.push(api.get("/inspections/locked-targets", { params: { category } }).then((r) => r.data));
         }
-        const [itemsData, questionsData, lockedData] = await Promise.all(fetches);
+        const results = await Promise.all(fetches);
+        const itemsData = results[0];
+        const questionsData = results[1];
+        const lockedData = results[2];
         const lockedSet = new Set((lockedData?.locked) || []);
-        const availableItems = isEditMode ? itemsData : itemsData.filter((item) => !lockedSet.has(item.id));
+        const availableItems = (isEditMode || NO_COOLDOWN_CATS.has(category)) ? itemsData : itemsData.filter((item) => !lockedSet.has(item.id));
         setItems(availableItems);
         setQuestions(questionsData);
         if (availableItems.length === 1) setTargetId(availableItems[0].id);
@@ -75,9 +135,9 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
     setAnswers(prefilled);
   }, [editInspection]);
 
-  // Fetch cooldown when target changes (skip in edit mode)
+  // Fetch cooldown when target changes (skip in edit mode and for no-cooldown categories)
   useEffect(() => {
-    if (isEditMode) return;
+    if (isEditMode || NO_COOLDOWN_CATS.has(category)) return;
     if (!targetId) { setCooldown(null); return; }
     let alive = true;
     (async () => {
@@ -182,12 +242,29 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
   };
 
   const BackArrow = lang === "ar" ? ArrowRight : ArrowLeft;
-  const targetLabel = t(TARGET_LABEL_KEY[target_type]);
+  const targetLabel = t(TARGET_LABEL_KEY[target_type] || "machine_number");
   const catLabelMap = {
     electrical: "cat_electrical", mechanical: "cat_mechanical",
     chiller: "cat_chiller", panels_main: "cat_panels_main", panels_sub: "cat_panels_sub",
+    cooling_tower: "cat_cooling_tower", preventive: "cat_preventive",
   };
-  const sectionLabelFinal = t(catLabelMap[category] || "cat_panels_sub");
+  const sectionLabelFinal = t(catLabelMap[category] || "cat_electrical");
+
+  // For preventive form: group questions by section
+  const questionSections = useMemo(() => {
+    if (category !== "preventive") return null;
+    const secs = [];
+    let curSec = null;
+    for (const q of questions) {
+      const sec = q.section || "General";
+      if (sec !== curSec) {
+        curSec = sec;
+        secs.push({ section: sec, questions: [] });
+      }
+      secs[secs.length - 1].questions.push(q);
+    }
+    return secs;
+  }, [questions, category]);
 
   return (
     <div className="fade-in" data-testid="inspection-form">
@@ -310,63 +387,17 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
             {t("no_questions")}
           </div>
         )}
-        {questions.map((q, idx) => {
-          const curr = answers[q.id];
-          const isNumeric = q.answer_type === "numeric";
-          return (
-            <div key={q.id} className="bg-white border border-slate-200 p-5">
-              <div className="mb-4">
-                <span className="text-xs font-semibold text-slate-500">{idx + 1}.</span>
-                <p className="text-lg font-semibold text-slate-900 mt-1 leading-relaxed">{q.text}</p>
+        {questionSections
+          ? questionSections.map(({ section, questions: secQs }) => (
+              <div key={section}>
+                <div className="bg-[#6B2D6B] text-white px-5 py-2.5 font-bold text-sm mt-4 first:mt-0">
+                  {section}
+                </div>
+                {secQs.map((q, idx) => <QuestionCard key={q.id} q={q} idx={questions.indexOf(q)} answers={answers} setAnswer={setAnswer} setNumericValue={setNumericValue} setNoteFor={setNoteFor} t={t} />)}
               </div>
-              {isNumeric ? (
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="0.0"
-                    value={curr?.numeric_value ?? ""}
-                    onChange={(e) => setNumericValue(q.id, e.target.value)}
-                    className="w-36 h-12 px-4 text-xl font-bold border-2 border-slate-200 focus:outline-none focus:border-[#6B2D6B] text-center"
-                    data-testid={`q-${q.id}-numeric`}
-                  />
-                  <span className="text-lg font-semibold text-[#6B2D6B]">{q.unit || "°C"}</span>
-                  {curr?.numeric_value !== undefined && curr?.numeric_value !== "" && (
-                    <span className="text-emerald-600 text-sm font-semibold">✓</span>
-                  )}
-                </div>
-              ) : (
-                <div className="flex gap-0">
-                  <button type="button" onClick={() => setAnswer(q.id, true)}
-                          className={`seg-btn ${curr?.answer === true ? "active-yes" : ""}`}
-                          data-testid={`q-${q.id}-yes`}>
-                    <CheckCircle size={22} weight="bold" />
-                    <span>{t("yes")}</span>
-                  </button>
-                  <button type="button" onClick={() => setAnswer(q.id, false)}
-                          className={`seg-btn ${curr?.answer === false ? "active-no" : ""}`}
-                          data-testid={`q-${q.id}-no`}>
-                    <XCircle size={22} weight="bold" />
-                    <span>{t("no")}</span>
-                  </button>
-                  <button type="button" onClick={() => setAnswer(q.id, "na")}
-                          className={`seg-btn ${curr?.answer === "na" ? "active-na" : ""}`}
-                          data-testid={`q-${q.id}-na`}>
-                    <MinusCircle size={22} weight="bold" />
-                    <span>N/A</span>
-                  </button>
-                </div>
-              )}
-              {!isNumeric && curr?.answer === false && (
-                <input type="text" placeholder={t("note_optional")}
-                       value={curr?.note || ""}
-                       onChange={(e) => setNoteFor(q.id, e.target.value)}
-                       className="w-full h-11 mt-3 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
-                       data-testid={`q-${q.id}-note`} />
-              )}
-            </div>
-          );
-        })}
+            ))
+          : questions.map((q, idx) => <QuestionCard key={q.id} q={q} idx={idx} answers={answers} setAnswer={setAnswer} setNumericValue={setNumericValue} setNoteFor={setNoteFor} t={t} />)
+        }
       </div>
 
       <div className="mt-6 bg-white border border-slate-200 p-5">

@@ -6,22 +6,26 @@ import Overview from "./admin/Overview";
 import Failures from "./admin/Failures";
 import Machines from "./admin/Machines";
 import Chillers from "./admin/Chillers";
+import CoolingTowers from "./admin/CoolingTowers";
 import Panels from "./admin/Panels";
 import Questions from "./admin/Questions";
 import Users from "./admin/Users";
 import Inspections from "./admin/Inspections";
+import Preventive from "./admin/Preventive";
 import RegistrationRequests from "./admin/RegistrationRequests";
 import {
   ChartBar, Wrench, Question, UsersThree, ClipboardText, Snowflake, ListChecks,
-  WarningOctagon, UserPlus,
+  WarningOctagon, UserPlus, Drop, Clipboard,
 } from "@phosphor-icons/react";
 
 const TABS = [
   { key: "overview", label_key: "tab_overview", Icon: ChartBar, Component: Overview },
   { key: "failures", label_key: "tab_failures", Icon: WarningOctagon, Component: Failures },
   { key: "inspections", label_key: "tab_inspections", Icon: ClipboardText, Component: Inspections },
+  { key: "preventive", label_key: "tab_preventive", Icon: Clipboard, Component: Preventive },
   { key: "machines", label_key: "tab_machines", Icon: Wrench, Component: Machines },
   { key: "chillers", label_key: "tab_chillers", Icon: Snowflake, Component: Chillers },
+  { key: "cooling-towers", label_key: "tab_cooling_towers", Icon: Drop, Component: CoolingTowers },
   { key: "panels", label_key: "tab_panels", Icon: ListChecks, Component: Panels },
   { key: "questions", label_key: "tab_questions", Icon: Question, Component: Questions },
   { key: "users", label_key: "tab_users", Icon: UsersThree, Component: Users },
