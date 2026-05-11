@@ -83,9 +83,10 @@ def _rl_fail_reg(ip: str) -> None:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-CATS = ["electrical", "mechanical", "chiller", "panels_main", "panels_sub"]
-Category = Literal["electrical", "mechanical", "chiller", "panels_main", "panels_sub"]
-TargetType = Literal["machine", "chiller", "panel"]
+CATS = ["electrical", "mechanical", "chiller", "panels_main", "panels_sub", "cooling_tower", "preventive"]
+Category = Literal["electrical", "mechanical", "chiller", "panels_main", "panels_sub", "cooling_tower", "preventive"]
+TargetType = Literal["machine", "chiller", "panel", "cooling_tower"]
+NO_COOLDOWN_CATS = {"cooling_tower", "preventive"}
 
 
 def hash_password(p: str) -> str:
@@ -134,11 +135,13 @@ async def require_admin(user=Depends(get_current_user)):
 def allowed_categories(user: dict) -> List[str]:
     if user["role"] == "admin":
         return CATS
+    if user["role"] == "helper":
+        return ["preventive"]
     sp = user.get("specialty")
     if sp == "electrical":
         return ["electrical", "panels_main", "panels_sub"]
     if sp == "mechanical":
-        return ["mechanical", "chiller"]
+        return ["mechanical", "chiller", "cooling_tower"]
     return []
 
 
@@ -149,6 +152,8 @@ CAT_TARGET = {
     "chiller": "chiller",
     "panels_main": "panel",
     "panels_sub": "panel",
+    "cooling_tower": "cooling_tower",
+    "preventive": "machine",
 }
 
 
@@ -161,14 +166,14 @@ class UserCreate(BaseModel):
     employee_number: str
     password: str
     name: str
-    role: Literal["admin", "technician"] = "technician"
+    role: Literal["admin", "technician", "helper"] = "technician"
     specialty: Optional[Literal["electrical", "mechanical"]] = None
 
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     password: Optional[str] = None
-    role: Optional[Literal["admin", "technician"]] = None
+    role: Optional[Literal["admin", "technician", "helper"]] = None
     specialty: Optional[Literal["electrical", "mechanical"]] = None
 
 
@@ -188,6 +193,7 @@ class QuestionCreate(BaseModel):
     order: int = 0
     answer_type: Literal["yes_no", "numeric"] = "yes_no"
     unit: Optional[str] = "°C"
+    section: Optional[str] = None
 
 
 class QuestionUpdate(BaseModel):
@@ -196,6 +202,7 @@ class QuestionUpdate(BaseModel):
     order: Optional[int] = None
     answer_type: Optional[Literal["yes_no", "numeric"]] = None
     unit: Optional[str] = None
+    section: Optional[str] = None
 
 
 class AnswerIn(BaseModel):
@@ -361,6 +368,7 @@ async def create_user(body: UserCreate, _=Depends(require_admin)):
     specialty = body.specialty if body.role == "technician" else None
     if body.role == "technician" and not specialty:
         raise HTTPException(400, "يجب تحديد تخصص الفني")
+    # helper role: no specialty needed
     doc = {"id": str(uuid.uuid4()), "employee_number": emp, "name": body.name,
            "role": body.role, "specialty": specialty,
            "password_hash": hash_password(body.password),
@@ -438,6 +446,7 @@ def make_entity_routes(coll_name: str, label: str, route: str):
 
 
 make_entity_routes("chillers", "الشيلر", "/chillers")
+make_entity_routes("cooling_towers", "برج التبريد", "/cooling-towers")
 
 
 # ---------- Machines (with group A/B and custom sort_order) ----------
@@ -582,6 +591,8 @@ async def create_question(body: QuestionCreate, _=Depends(require_admin)):
            "answer_type": answer_type,
            "unit": body.unit if answer_type == "numeric" else None,
            "created_at": datetime.now(timezone.utc).isoformat()}
+    if body.section:
+        doc["section"] = body.section
     await db.questions.insert_one(doc); doc.pop("_id", None)
     return doc
 
@@ -594,7 +605,7 @@ async def update_question(qid: str, body: QuestionUpdate, _=Depends(require_admi
     if target_cat and target_cat not in numeric_allowed:
         upd["answer_type"] = "yes_no"
     if not upd: raise HTTPException(400, "لا توجد حقول")
-    await db.questions.update_one({"id": qid}, {"$set": upd})
+    await db.questions.update_one({"id": qid}, {"$set": upd})  # noqa: section stored as-is
     q = await db.questions.find_one({"id": qid}, {"_id": 0})
     if not q: raise HTTPException(404, "غير موجود")
     return q
@@ -660,6 +671,91 @@ async def seed_mechanical_questions(_=Depends(require_admin)):
     return {"deleted": deleted.deleted_count, "inserted": len(docs)}
 
 
+@api.post("/admin/seed-cooling-tower-questions")
+async def seed_cooling_tower_questions(_=Depends(require_admin)):
+    """One-time endpoint: replaces all cooling tower questions with the standard set."""
+    CT_QUESTIONS = [
+        {"text": "Check main tank water level"},
+        {"text": "Check water distribution over cooling pad"},
+        {"text": "Check exhaust fan operation"},
+        {"text": "Check main tank water supply level"},
+    ]
+    deleted = await db.questions.delete_many({"category": "cooling_tower"})
+    now = datetime.now(timezone.utc).isoformat()
+    docs = [
+        {"id": str(uuid.uuid4()), "category": "cooling_tower", "text": q["text"],
+         "order": i, "answer_type": "yes_no", "unit": None, "created_at": now}
+        for i, q in enumerate(CT_QUESTIONS)
+    ]
+    await db.questions.insert_many(docs)
+    return {"deleted": deleted.deleted_count, "inserted": len(docs)}
+
+
+@api.post("/admin/seed-preventive-questions")
+async def seed_preventive_questions(_=Depends(require_admin)):
+    """One-time endpoint: replaces all preventive maintenance questions with the 45-question set."""
+    PREVENTIVE_QUESTIONS = [
+        # Clamp Unit (18)
+        {"section": "Clamp Unit", "text": "Check hydraulic oil level"},
+        {"section": "Clamp Unit", "text": "Check hydraulic valves condition"},
+        {"section": "Clamp Unit", "text": "Check pipes and hoses for leakage"},
+        {"section": "Clamp Unit", "text": "Check hydraulic oil temperature"},
+        {"section": "Clamp Unit", "text": "Check front/rear safety doors"},
+        {"section": "Clamp Unit", "text": "Remove old grease from guide shoes"},
+        {"section": "Clamp Unit", "text": "Grease nipples and rods of guide shoes"},
+        {"section": "Clamp Unit", "text": "Check moving platen guide shoes"},
+        {"section": "Clamp Unit", "text": "Check for water/oil leakage"},
+        {"section": "Clamp Unit", "text": "Check tie bars and chains condition"},
+        {"section": "Clamp Unit", "text": "Check heat exchanger"},
+        {"section": "Clamp Unit", "text": "Check ejector piston and butterfly"},
+        {"section": "Clamp Unit", "text": "Check door safety switches"},
+        {"section": "Clamp Unit", "text": "Check for loose/broken bolts"},
+        {"section": "Clamp Unit", "text": "Check wiring and cables"},
+        {"section": "Clamp Unit", "text": "Check clamp/ejector scale"},
+        {"section": "Clamp Unit", "text": "Lubricate all moving parts"},
+        {"section": "Clamp Unit", "text": "Check for abnormal noise"},
+        # Injection Unit (14)
+        {"section": "Injection Unit", "text": "Check injection piston cylinders"},
+        {"section": "Injection Unit", "text": "Check oil leakage in pipes and hoses"},
+        {"section": "Injection Unit", "text": "Check manifold valves"},
+        {"section": "Injection Unit", "text": "Check motor and pump condition"},
+        {"section": "Injection Unit", "text": "Check carriage bolts and nuts"},
+        {"section": "Injection Unit", "text": "Check barrel water circulation"},
+        {"section": "Injection Unit", "text": "Check hydraulic motor"},
+        {"section": "Injection Unit", "text": "Check nozzle heater"},
+        {"section": "Injection Unit", "text": "Check barrel heaters and thermocouples"},
+        {"section": "Injection Unit", "text": "Check lubrication nipples"},
+        {"section": "Injection Unit", "text": "Lubricate motor and moving parts"},
+        {"section": "Injection Unit", "text": "Check purge shield"},
+        {"section": "Injection Unit", "text": "Check injection unit cables and wiring"},
+        {"section": "Injection Unit", "text": "Check injection level and nozzle centralization"},
+        # Electrical Panel (11)
+        {"section": "Electrical Panel", "text": "Clean motor and wiring"},
+        {"section": "Electrical Panel", "text": "Check emergency stop buttons"},
+        {"section": "Electrical Panel", "text": "Check display and control wiring"},
+        {"section": "Electrical Panel", "text": "Check cooling fans operation"},
+        {"section": "Electrical Panel", "text": "Check voltage measurement"},
+        {"section": "Electrical Panel", "text": "Check circuit breakers"},
+        {"section": "Electrical Panel", "text": "Check contactors and relays"},
+        {"section": "Electrical Panel", "text": "Check cables and wiring connections"},
+        {"section": "Electrical Panel", "text": "Clean dust from electrical cabinet"},
+        {"section": "Electrical Panel", "text": "Check battery and power supply"},
+        {"section": "Electrical Panel", "text": "Check servo motor driver"},
+        # General (2)
+        {"section": "General", "text": "Check machine level"},
+        {"section": "General", "text": "Clean machine exterior"},
+    ]
+    deleted = await db.questions.delete_many({"category": "preventive"})
+    now = datetime.now(timezone.utc).isoformat()
+    docs = [
+        {"id": str(uuid.uuid4()), "category": "preventive", "section": q["section"],
+         "text": q["text"], "order": i, "answer_type": "yes_no", "unit": None, "created_at": now}
+        for i, q in enumerate(PREVENTIVE_QUESTIONS)
+    ]
+    await db.questions.insert_many(docs)
+    return {"deleted": deleted.deleted_count, "inserted": len(docs)}
+
+
 # ---------- Inspections ----------
 COOLDOWN_MINUTES = 15
 
@@ -700,6 +796,8 @@ LOCK_HOURS = 12
 @api.get("/inspections/locked-targets")
 async def locked_targets(category: str, _=Depends(get_current_user)):
     """Return target_ids inspected by any technician within the last 12 hours."""
+    if category in NO_COOLDOWN_CATS:
+        return {"locked": []}
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=LOCK_HOURS)).isoformat()
     docs = await db.inspections.find(
         {"category": category, "created_at": {"$gte": cutoff}},
@@ -715,22 +813,23 @@ async def create_inspection(body: InspectionCreate, user=Depends(get_current_use
     expected = CAT_TARGET[body.category]
     if body.target_type != expected:
         raise HTTPException(400, "نوع الهدف لا يطابق القسم")
-    coll = {"machine": "machines", "chiller": "chillers", "panel": "panels"}[body.target_type]
+    coll = {"machine": "machines", "chiller": "chillers", "panel": "panels", "cooling_tower": "cooling_towers"}[body.target_type]
     target = await db[coll].find_one({"id": body.target_id}, {"_id": 0})
     if not target:
         raise HTTPException(404, "العنصر غير موجود")
 
-    # 15-minute cooldown per (target, category)
-    last = await _get_last_inspection(body.target_id, body.category)
-    if last:
-        elapsed = (datetime.now(timezone.utc) - _parse_iso(last["created_at"])).total_seconds()
-        remaining = COOLDOWN_MINUTES * 60 - elapsed
-        if remaining > 0:
-            mins = int(remaining // 60) + 1
-            raise HTTPException(
-                429,
-                f"لا يمكن رفع فحص جديد لنفس العنصر قبل مرور {COOLDOWN_MINUTES} دقيقة. تبقّى ~{mins} دقيقة.",
-            )
+    # 15-minute cooldown per (target, category) — skipped for NO_COOLDOWN_CATS
+    if body.category not in NO_COOLDOWN_CATS:
+        last = await _get_last_inspection(body.target_id, body.category)
+        if last:
+            elapsed = (datetime.now(timezone.utc) - _parse_iso(last["created_at"])).total_seconds()
+            remaining = COOLDOWN_MINUTES * 60 - elapsed
+            if remaining > 0:
+                mins = int(remaining // 60) + 1
+                raise HTTPException(
+                    429,
+                    f"لا يمكن رفع فحص جديد لنفس العنصر قبل مرور {COOLDOWN_MINUTES} دقيقة. تبقّى ~{mins} دقيقة.",
+                )
 
     doc = {"id": str(uuid.uuid4()), "category": body.category,
            "target_type": body.target_type, "target_id": body.target_id,
@@ -757,10 +856,13 @@ async def list_inspections(
     limit: int = 200, user=Depends(get_current_user),
 ):
     q: dict = {}
-    if user["role"] != "admin":
+    if user["role"] == "admin":
+        if technician_id:
+            q["technician_id"] = technician_id
+    else:
         q["technician_id"] = user["id"]
-    elif technician_id:
-        q["technician_id"] = technician_id
+        if user["role"] == "helper":
+            q["category"] = "preventive"
     if target_number: q["target_number"] = {"$regex": f"^{re.escape(target_number)}", "$options": "i"}
     if target_type: q["target_type"] = target_type
     if category: q["category"] = category
@@ -1162,6 +1264,123 @@ async def export_pdf(iid: str, _=Depends(require_admin)):
                              headers={"Content-Disposition": f'attachment; filename="inspection_{doc.get("target_number","")}.pdf"'})
 
 
+@api.get("/inspections/{iid}/export/preventive-pdf")
+async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
+    doc = await db.inspections.find_one({"id": iid}, {"_id": 0})
+    if not doc: raise HTTPException(404, "غير موجود")
+    if doc.get("category") != "preventive":
+        raise HTTPException(400, "هذا ليس فحص صيانة وقائية")
+
+    questions = await db.questions.find(
+        {"category": "preventive"}, {"_id": 0}
+    ).sort([("order", 1)]).to_list(200)
+
+    expanded = _expand_answers(doc.get("answers", []))
+    answers_map = {a["question_id"]: a for a in expanded}
+
+    sections: dict = {}
+    section_order: list = []
+    for q in questions:
+        sec = q.get("section") or "General"
+        if sec not in sections:
+            sections[sec] = []
+            section_order.append(sec)
+        sections[sec].append(q)
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
+    PURPLE = (0.42, 0.18, 0.42)
+
+    y = height - 1.5 * cm
+    # Logo
+    if os.path.exists(LOGO_PATH):
+        from reportlab.lib.units import cm as rcm
+        c.drawImage(LOGO_PATH, 2 * cm, y - 1.2 * cm, width=4 * cm, height=1.2 * cm,
+                    preserveAspectRatio=True, mask="auto")
+    c.setFont("Helvetica-Bold", 16)
+    c.setFillColorRGB(*PURPLE)
+    c.drawCentredString(width / 2, y, "Preventive Maintenance Inspection")
+    y -= 0.8 * cm
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("Helvetica", 11)
+    date_str = doc["created_at"][:10]
+    c.drawString(2 * cm, y, f"Machine #: {doc.get('target_number', '')}  —  {doc.get('target_name', '')}")
+    c.drawRightString(width - 2 * cm, y, f"Date: {date_str}")
+    y -= 0.5 * cm
+    c.drawString(2 * cm, y, f"Technician: {doc.get('technician_name', '')}")
+    y -= 0.9 * cm
+
+    c.setStrokeColorRGB(*PURPLE)
+    c.setLineWidth(1.5)
+    c.line(2 * cm, y, width - 2 * cm, y)
+    y -= 0.5 * cm
+
+    for sec in section_order:
+        # Section header bar
+        c.setFillColorRGB(*PURPLE)
+        c.rect(2 * cm, y - 0.35 * cm, width - 4 * cm, 0.7 * cm, fill=1, stroke=0)
+        c.setFillColorRGB(1, 1, 1)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(2.4 * cm, y - 0.15 * cm, sec)
+        y -= 1.0 * cm
+
+        for q in sections[sec]:
+            a = answers_map.get(q["id"])
+            if a is None or a.get("skipped"):
+                mark = "N/A"
+                c.setFillColorRGB(0.5, 0.5, 0.5)
+            elif a.get("answer"):
+                mark = "✓"
+                c.setFillColorRGB(0.11, 0.53, 0.22)
+            else:
+                mark = "✗"
+                c.setFillColorRGB(0.75, 0.1, 0.1)
+            c.setFont("Helvetica-Bold", 13)
+            c.drawString(2.5 * cm, y, mark)
+            c.setFillColorRGB(0, 0, 0)
+            c.setFont("Helvetica", 10)
+            c.drawString(3.6 * cm, y, q.get("text", "")[:90])
+            if a and a.get("note"):
+                y -= 0.4 * cm
+                c.setFont("Helvetica-Oblique", 9)
+                c.setFillColorRGB(0.4, 0.4, 0.4)
+                c.drawString(3.6 * cm, y, f"Note: {a['note'][:80]}")
+                c.setFillColorRGB(0, 0, 0)
+            y -= 0.55 * cm
+            if y < 2.5 * cm:
+                c.showPage()
+                y = height - 2 * cm
+
+        y -= 0.4 * cm
+
+    if doc.get("notes"):
+        if y < 4 * cm:
+            c.showPage()
+            y = height - 2 * cm
+        c.setFillColorRGB(*PURPLE)
+        c.rect(2 * cm, y - 0.35 * cm, width - 4 * cm, 0.7 * cm, fill=1, stroke=0)
+        c.setFillColorRGB(1, 1, 1)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(2.4 * cm, y - 0.15 * cm, "General Notes")
+        y -= 1.0 * cm
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont("Helvetica", 10)
+        c.drawString(2.5 * cm, y, doc["notes"][:120])
+        y -= 0.6 * cm
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    fname = f"preventive_{doc.get('target_number', '')}_{doc['created_at'][:10]}.pdf"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 def _expand_answers(answers: list) -> list:
     result = []
     for a in answers:
@@ -1330,7 +1549,7 @@ async def startup():
 
     await db.users.create_index("employee_number", unique=True)
     await db.users.create_index("id", unique=True)
-    for c in ("machines", "chillers", "panels"):
+    for c in ("machines", "chillers", "panels", "cooling_towers"):
         await db[c].create_index("number", unique=True)
         await db[c].create_index("id", unique=True)
     await db.questions.create_index("id", unique=True)
@@ -1344,8 +1563,8 @@ async def startup():
     await db.registration_requests.create_index("status")
     await db.registration_requests.create_index("expires_at", expireAfterSeconds=0, sparse=True)
 
-    # Migration: backfill sort_order for chillers and panels missing it
-    for coll_name in ("chillers", "panels"):
+    # Migration: backfill sort_order for chillers, panels, cooling_towers missing it
+    for coll_name in ("chillers", "panels", "cooling_towers"):
         items = await db[coll_name].find(
             {"sort_order": {"$exists": False}}, {"_id": 0, "id": 1}
         ).sort("number", 1).to_list(2000)
@@ -1410,6 +1629,79 @@ async def startup():
             for i, q in enumerate(mech_qs)
         ])
         logger.info("Seeded 9 mechanical questions")
+
+    # Seed cooling tower questions if none exist
+    if await db.questions.count_documents({"category": "cooling_tower"}) == 0:
+        now = datetime.now(timezone.utc).isoformat()
+        ct_qs = [
+            "Check main tank water level",
+            "Check water distribution over cooling pad",
+            "Check exhaust fan operation",
+            "Check main tank water supply level",
+        ]
+        await db.questions.insert_many([
+            {"id": str(uuid.uuid4()), "category": "cooling_tower", "text": q,
+             "order": i, "answer_type": "yes_no", "unit": None, "created_at": now}
+            for i, q in enumerate(ct_qs)
+        ])
+        logger.info("Seeded 4 cooling tower questions")
+
+    # Seed preventive maintenance questions if none exist
+    if await db.questions.count_documents({"category": "preventive"}) == 0:
+        now = datetime.now(timezone.utc).isoformat()
+        prev_qs = [
+            ("Clamp Unit", "Check hydraulic oil level"),
+            ("Clamp Unit", "Check hydraulic valves condition"),
+            ("Clamp Unit", "Check pipes and hoses for leakage"),
+            ("Clamp Unit", "Check hydraulic oil temperature"),
+            ("Clamp Unit", "Check front/rear safety doors"),
+            ("Clamp Unit", "Remove old grease from guide shoes"),
+            ("Clamp Unit", "Grease nipples and rods of guide shoes"),
+            ("Clamp Unit", "Check moving platen guide shoes"),
+            ("Clamp Unit", "Check for water/oil leakage"),
+            ("Clamp Unit", "Check tie bars and chains condition"),
+            ("Clamp Unit", "Check heat exchanger"),
+            ("Clamp Unit", "Check ejector piston and butterfly"),
+            ("Clamp Unit", "Check door safety switches"),
+            ("Clamp Unit", "Check for loose/broken bolts"),
+            ("Clamp Unit", "Check wiring and cables"),
+            ("Clamp Unit", "Check clamp/ejector scale"),
+            ("Clamp Unit", "Lubricate all moving parts"),
+            ("Clamp Unit", "Check for abnormal noise"),
+            ("Injection Unit", "Check injection piston cylinders"),
+            ("Injection Unit", "Check oil leakage in pipes and hoses"),
+            ("Injection Unit", "Check manifold valves"),
+            ("Injection Unit", "Check motor and pump condition"),
+            ("Injection Unit", "Check carriage bolts and nuts"),
+            ("Injection Unit", "Check barrel water circulation"),
+            ("Injection Unit", "Check hydraulic motor"),
+            ("Injection Unit", "Check nozzle heater"),
+            ("Injection Unit", "Check barrel heaters and thermocouples"),
+            ("Injection Unit", "Check lubrication nipples"),
+            ("Injection Unit", "Lubricate motor and moving parts"),
+            ("Injection Unit", "Check purge shield"),
+            ("Injection Unit", "Check injection unit cables and wiring"),
+            ("Injection Unit", "Check injection level and nozzle centralization"),
+            ("Electrical Panel", "Clean motor and wiring"),
+            ("Electrical Panel", "Check emergency stop buttons"),
+            ("Electrical Panel", "Check display and control wiring"),
+            ("Electrical Panel", "Check cooling fans operation"),
+            ("Electrical Panel", "Check voltage measurement"),
+            ("Electrical Panel", "Check circuit breakers"),
+            ("Electrical Panel", "Check contactors and relays"),
+            ("Electrical Panel", "Check cables and wiring connections"),
+            ("Electrical Panel", "Clean dust from electrical cabinet"),
+            ("Electrical Panel", "Check battery and power supply"),
+            ("Electrical Panel", "Check servo motor driver"),
+            ("General", "Check machine level"),
+            ("General", "Clean machine exterior"),
+        ]
+        await db.questions.insert_many([
+            {"id": str(uuid.uuid4()), "category": "preventive", "section": sec,
+             "text": txt, "order": i, "answer_type": "yes_no", "unit": None, "created_at": now}
+            for i, (sec, txt) in enumerate(prev_qs)
+        ])
+        logger.info("Seeded 45 preventive maintenance questions")
 
     admin_pw = os.environ.get("ADMIN_PASSWORD", "admin123")
     admin_emp = os.environ.get("ADMIN_EMPLOYEE_NUMBER", ADMIN_EMP_NUMBER).upper()

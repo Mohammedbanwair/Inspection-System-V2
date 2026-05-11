@@ -7,7 +7,7 @@ import TopBar from "../components/TopBar";
 import InspectionForm from "./InspectionForm";
 import {
   Gear, Wrench, Snowflake, ListChecks, ClipboardText, ArrowRight, ArrowLeft, PencilSimple,
-  CheckSquare, WarningCircle, Timer,
+  CheckSquare, WarningCircle, Timer, Drop,
 } from "@phosphor-icons/react";
 
 const EDIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -66,6 +66,13 @@ const BRANCH_GROUPS_BY_SPECIALTY = {
       desc_key: "branch_chillers_desc",
       Icon: Snowflake,
       branch: { category: "chiller", target_type: "chiller" },
+    },
+    {
+      key: "cooling-towers",
+      title_key: "branch_cooling_towers",
+      desc_key: "branch_cooling_towers_desc",
+      Icon: Drop,
+      branch: { category: "cooling_tower", target_type: "cooling_tower" },
     },
   ],
 };
@@ -244,7 +251,9 @@ export default function TechDashboard() {
                       const catKey = h.category === "electrical" ? "cat_electrical" :
                         h.category === "mechanical" ? "cat_mechanical" :
                         h.category === "chiller" ? "cat_chiller" :
-                        h.category === "panels_main" ? "cat_panels_main" : "cat_panels_sub";
+                        h.category === "panels_main" ? "cat_panels_main" :
+                        h.category === "panels_sub" ? "cat_panels_sub" :
+                        h.category === "cooling_tower" ? "cat_cooling_tower" : "cat_preventive";
                       const catLabel = t(catKey);
                       const editable = canEdit(h.created_at);
                       return (
