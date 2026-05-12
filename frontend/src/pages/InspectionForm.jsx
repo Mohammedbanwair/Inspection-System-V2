@@ -76,7 +76,7 @@ function formatHMS(sec) {
 
 export default function InspectionForm({ branch, editInspection, onBack, onSubmitted }) {
   const { t, lang } = useI18n();
-  const { category, target_type, group, panel_type } = branch;
+  const { category, target_type, group, panel_type, defaultTargetId } = branch;
   const isEditMode = !!editInspection;
   const [items, setItems] = useState([]);
   const [questions, setQuestions] = useState([]);
@@ -110,12 +110,16 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
         const availableItems = (isEditMode || NO_COOLDOWN_CATS.has(category)) ? itemsData : itemsData.filter((item) => !lockedSet.has(item.id));
         setItems(availableItems);
         setQuestions(questionsData);
-        if (availableItems.length === 1) setTargetId(availableItems[0].id);
+        if (defaultTargetId && availableItems.some((item) => item.id === defaultTargetId)) {
+          setTargetId(defaultTargetId);
+        } else if (availableItems.length === 1) {
+          setTargetId(availableItems[0].id);
+        }
       } catch (e) {
         toast.error(formatApiError(e));
       }
     })();
-  }, [category, target_type, group, panel_type, isEditMode]);
+  }, [category, target_type, group, panel_type, isEditMode, defaultTargetId]);
 
   // Pre-fill data when in edit mode
   useEffect(() => {

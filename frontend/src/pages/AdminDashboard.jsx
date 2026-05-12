@@ -12,10 +12,11 @@ import Questions from "./admin/Questions";
 import Users from "./admin/Users";
 import Inspections from "./admin/Inspections";
 import Preventive from "./admin/Preventive";
+import PreventivePlan from "./admin/PreventivePlan";
 import RegistrationRequests from "./admin/RegistrationRequests";
 import {
   ChartBar, Wrench, Question, UsersThree, ClipboardText, Snowflake, ListChecks,
-  WarningOctagon, UserPlus, Drop, Clipboard,
+  WarningOctagon, UserPlus, Drop, Clipboard, CalendarCheck,
 } from "@phosphor-icons/react";
 
 const TABS = [
@@ -23,6 +24,7 @@ const TABS = [
   { key: "failures", label_key: "tab_failures", Icon: WarningOctagon, Component: Failures },
   { key: "inspections", label_key: "tab_inspections", Icon: ClipboardText, Component: Inspections },
   { key: "preventive", label_key: "tab_preventive", Icon: Clipboard, Component: Preventive },
+  { key: "preventive-plan", label_key: "tab_preventive_plan", Icon: CalendarCheck, Component: PreventivePlan },
   { key: "machines", label_key: "tab_machines", Icon: Wrench, Component: Machines },
   { key: "chillers", label_key: "tab_chillers", Icon: Snowflake, Component: Chillers },
   { key: "cooling-towers", label_key: "tab_cooling_towers", Icon: Drop, Component: CoolingTowers },
