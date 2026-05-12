@@ -11,7 +11,7 @@ const TARGET_LABEL_KEY = { machine: "machine_number", chiller: "chiller_number",
 const TARGET_API = { machine: "/machines", chiller: "/chillers", panel: "/panels", cooling_tower: "/cooling-towers" };
 const NO_COOLDOWN_CATS = new Set(["cooling_tower", "preventive"]);
 
-function QuestionCard({ q, idx, answers, setAnswer, setNumericValue, setNoteFor, t }) {
+function QuestionCard({ q, idx, answers, setAnswer, setNumericValue, setNoteFor, setSparePartFor, isPreventive, t }) {
   const curr = answers[q.id];
   const isNumeric = q.answer_type === "numeric";
   return (
@@ -63,6 +63,16 @@ function QuestionCard({ q, idx, answers, setAnswer, setNumericValue, setNoteFor,
                className="w-full h-11 mt-3 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
                data-testid={`q-${q.id}-note`} />
       )}
+      {isPreventive && (
+        <input
+          type="text"
+          placeholder={t("spare_part_placeholder")}
+          value={curr?.spare_part || ""}
+          onChange={(e) => setSparePartFor(q.id, e.target.value)}
+          className="w-full h-10 mt-3 px-3 border border-amber-200 bg-amber-50 text-sm placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300"
+          data-testid={`q-${q.id}-spare-part`}
+        />
+      )}
     </div>
   );
 }
@@ -87,6 +97,8 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
   const [cooldown, setCooldown] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [timeMcReceived, setTimeMcReceived] = useState("");
+  const [timeDelivered, setTimeDelivered] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -126,6 +138,8 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
     if (!editInspection) return;
     setTargetId(editInspection.target_id);
     setNotes(editInspection.notes || "");
+    setTimeMcReceived(editInspection.time_mc_received || "");
+    setTimeDelivered(editInspection.time_delivered || "");
     const prefilled = {};
     for (const a of editInspection.answers || []) {
       prefilled[a.question_id] = {
@@ -134,6 +148,7 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
           ? { numeric_value: String(a.numeric_value) }
           : {}),
         note: a.note || "",
+        spare_part: a.spare_part || "",
       };
     }
     setAnswers(prefilled);
@@ -195,6 +210,10 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
     setIsDirty(true);
     setAnswers((p) => ({ ...p, [qid]: { ...(p[qid] || {}), note: n } }));
   };
+  const setSparePartFor = (qid, v) => {
+    setIsDirty(true);
+    setAnswers((p) => ({ ...p, [qid]: { ...(p[qid] || {}), spare_part: v } }));
+  };
 
   const completed = useMemo(
     () => questions.filter((q) => {
@@ -213,6 +232,7 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
       answer: v.answer === "na" ? null : v.answer !== undefined ? !!v.answer : null,
       numeric_value: v.numeric_value !== undefined ? parseFloat(v.numeric_value) : null,
       note: v.note || "",
+      spare_part: v.spare_part || "",
       skipped: v.answer === "na",
     }));
 
@@ -222,16 +242,19 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
     if (completed < questions.length) return toast.error(t("required_all_answered"));
     setSubmitting(true);
     try {
+      const isPreventive = category === "preventive";
       if (isEditMode) {
         await api.patch(`/inspections/${editInspection.id}`, {
           notes,
           answers: buildAnswersPayload(),
+          ...(isPreventive ? { time_mc_received: timeMcReceived, time_delivered: timeDelivered } : {}),
         });
         toast.success(t("inspection_updated"));
       } else {
         await api.post("/inspections", {
           category, target_type, target_id: targetId, notes,
           answers: buildAnswersPayload(),
+          ...(isPreventive ? { time_mc_received: timeMcReceived, time_delivered: timeDelivered } : {}),
         });
         toast.success(t("inspection_saved"));
         setCooldown({ in_cooldown: true, remaining_seconds: 15 * 60, last_technician_name: null });
@@ -397,14 +420,53 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
                 <div className="bg-[#6B2D6B] text-white px-5 py-2.5 font-bold text-sm mt-4 first:mt-0">
                   {section}
                 </div>
-                {secQs.map((q, idx) => <QuestionCard key={q.id} q={q} idx={questions.indexOf(q)} answers={answers} setAnswer={setAnswer} setNumericValue={setNumericValue} setNoteFor={setNoteFor} t={t} />)}
+                {secQs.map((q) => (
+                  <QuestionCard key={q.id} q={q} idx={questions.indexOf(q)}
+                    answers={answers} setAnswer={setAnswer} setNumericValue={setNumericValue}
+                    setNoteFor={setNoteFor} setSparePartFor={setSparePartFor}
+                    isPreventive t={t} />
+                ))}
               </div>
             ))
-          : questions.map((q, idx) => <QuestionCard key={q.id} q={q} idx={idx} answers={answers} setAnswer={setAnswer} setNumericValue={setNumericValue} setNoteFor={setNoteFor} t={t} />)
+          : questions.map((q, idx) => (
+              <QuestionCard key={q.id} q={q} idx={idx}
+                answers={answers} setAnswer={setAnswer} setNumericValue={setNumericValue}
+                setNoteFor={setNoteFor} setSparePartFor={setSparePartFor}
+                isPreventive={false} t={t} />
+            ))
         }
       </div>
 
-      <div className="mt-6 bg-white border border-slate-200 p-5">
+      {category === "preventive" && (
+        <div className="mt-4 bg-white border border-slate-200 p-5 grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              {t("time_mc_received")}
+            </label>
+            <input
+              type="time"
+              value={timeMcReceived}
+              onChange={(e) => { setTimeMcReceived(e.target.value); setIsDirty(true); }}
+              className="w-full h-12 mt-2 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE] text-lg"
+              data-testid="time-mc-received"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              {t("time_delivered")}
+            </label>
+            <input
+              type="time"
+              value={timeDelivered}
+              onChange={(e) => { setTimeDelivered(e.target.value); setIsDirty(true); }}
+              className="w-full h-12 mt-2 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE] text-lg"
+              data-testid="time-delivered"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 bg-white border border-slate-200 p-5">
         <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
           {t("general_notes")}
         </label>
