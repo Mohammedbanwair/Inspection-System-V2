@@ -218,7 +218,7 @@ export default function Preventive() {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>
                   <div className="text-xs text-slate-500">{t("date")}</div>
                   <div className="font-semibold">
@@ -228,6 +228,14 @@ export default function Preventive() {
                 <div>
                   <div className="text-xs text-slate-500">{t("technician")}</div>
                   <div className="font-semibold">{viewing.technician_name}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">{t("time_mc_received")}</div>
+                  <div className="font-semibold font-mono">{viewing.time_mc_received || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">{t("time_delivered")}</div>
+                  <div className="font-semibold font-mono">{viewing.time_delivered || "—"}</div>
                 </div>
               </div>
 
@@ -259,7 +267,12 @@ export default function Preventive() {
                             <div className="flex-1">
                               <div className="text-sm">{q.text}</div>
                               {a?.note && (
-                                <div className="text-xs text-slate-500 mt-1">{t("notes")}: {a.note}</div>
+                                <div className="text-xs text-slate-500 mt-0.5">{t("notes")}: {a.note}</div>
+                              )}
+                              {a?.spare_part && (
+                                <div className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 mt-1 inline-block">
+                                  🔧 {t("spare_part")}: {a.spare_part}
+                                </div>
                               )}
                             </div>
                           </div>

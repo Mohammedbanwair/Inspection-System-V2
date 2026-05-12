@@ -210,6 +210,7 @@ class AnswerIn(BaseModel):
     answer: Optional[bool] = None
     numeric_value: Optional[float] = None
     note: Optional[str] = ""
+    spare_part: Optional[str] = ""
 
 
 class InspectionCreate(BaseModel):
@@ -218,11 +219,15 @@ class InspectionCreate(BaseModel):
     target_id: str
     answers: List[AnswerIn]
     notes: Optional[str] = ""
+    time_mc_received: Optional[str] = ""
+    time_delivered: Optional[str] = ""
 
 
 class InspectionUpdate(BaseModel):
     answers: List[AnswerIn]
     notes: Optional[str] = ""
+    time_mc_received: Optional[str] = ""
+    time_delivered: Optional[str] = ""
 
 
 class PreventivePlanCreate(BaseModel):
@@ -845,9 +850,12 @@ async def create_inspection(body: InspectionCreate, user=Depends(get_current_use
                    "qid": a.question_id, "a": a.answer,
                    **({"nv": a.numeric_value} if a.numeric_value is not None else {}),
                    **({"n": a.note} if a.note else {}),
+                   **({"sp": a.spare_part} if a.spare_part else {}),
                }.items()}
                for a in body.answers
            ], "notes": body.notes or "",
+           "time_mc_received": body.time_mc_received or "",
+           "time_delivered": body.time_delivered or "",
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.inspections.insert_one(doc); doc.pop("_id", None)
     return doc
@@ -1218,12 +1226,15 @@ async def update_inspection(iid: str, body: InspectionUpdate, user=Depends(get_c
             "qid": a.question_id, "a": a.answer,
             **({"nv": a.numeric_value} if a.numeric_value is not None else {}),
             **({"n": a.note} if a.note else {}),
+            **({"sp": a.spare_part} if a.spare_part else {}),
         }.items()}
         for a in body.answers
     ]
     await db.inspections.update_one(
         {"id": iid},
         {"$set": {"answers": new_answers, "notes": body.notes or "",
+                  "time_mc_received": body.time_mc_received or "",
+                  "time_delivered": body.time_delivered or "",
                   "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
     updated = await db.inspections.find_one({"id": iid}, {"_id": 0})
@@ -1273,7 +1284,7 @@ async def export_pdf(iid: str, _=Depends(require_admin)):
 async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
     from reportlab.platypus import (
         SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
-        Image as PLImage, KeepTogether,
+        Image as PLImage,
     )
     from reportlab.lib import colors as rl_colors
     from reportlab.lib.styles import ParagraphStyle
@@ -1313,17 +1324,20 @@ async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
     GREY         = rl_colors.HexColor('#757575')
     LIGHT_GREY   = rl_colors.HexColor('#F5F5F5')
     MID_GREY     = rl_colors.HexColor('#CCCCCC')
+    SP_BG        = rl_colors.HexColor('#FFF8E1')
 
-    date_str     = doc_data.get("created_at", "")[:10]
-    machine_no   = doc_data.get("target_number", "")
-    machine_name = doc_data.get("target_name", "") or ""
-    tech_name    = doc_data.get("technician_name", "")
-    notes_text   = doc_data.get("notes", "") or ""
+    date_str          = doc_data.get("created_at", "")[:10]
+    machine_no        = doc_data.get("target_number", "")
+    machine_name      = doc_data.get("target_name", "") or ""
+    tech_name         = doc_data.get("technician_name", "")
+    notes_text        = doc_data.get("notes", "") or ""
+    time_received     = doc_data.get("time_mc_received", "") or "—"
+    time_delivered    = doc_data.get("time_delivered", "") or "—"
 
     buf = io.BytesIO()
     pw, ph = A4
-    LM = RM = 1.5 * cm
-    USABLE = pw - LM - RM   # ~18 cm
+    LM = RM = 1.4 * cm
+    USABLE = pw - LM - RM   # ~18.2 cm
 
     # ── Paragraph helpers ─────────────────────────────────────────
     def ps(name, font="Helvetica", size=9, bold=False, align=TA_LEFT, color=BLACK, leading=None):
@@ -1333,53 +1347,57 @@ async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
             textColor=color, alignment=align,
         )
 
-    p_title   = ps("t", size=13, bold=True, color=PURPLE, align=TA_CENTER)
-    p_sub     = ps("s", size=10, bold=True, color=DARK_PURPLE, align=TA_CENTER)
-    p_info    = ps("i", size=9)
-    p_hdr     = ps("h", size=9, bold=True, color=WHITE, align=TA_CENTER)
-    p_sec     = ps("se", size=10, bold=True, color=WHITE)
-    p_num     = ps("n", size=9, align=TA_CENTER)
-    p_text    = ps("tx", size=9)
-    p_ok      = ps("ok", size=13, bold=True, color=GREEN_FG, align=TA_CENTER)
-    p_fail    = ps("fl", size=13, bold=True, color=RED_FG, align=TA_CENTER)
-    p_na      = ps("na", size=8, bold=True, color=GREY, align=TA_CENTER)
-    p_note    = ps("nt", size=8, color=GREY)
+    p_title   = ps("t",  size=13, bold=True,  color=PURPLE,    align=TA_CENTER)
+    p_sub     = ps("s",  size=10, bold=True,  color=DARK_PURPLE, align=TA_CENTER)
+    p_info    = ps("i",  size=9)
+    p_hdr     = ps("h",  size=8,  bold=True,  color=WHITE,     align=TA_CENTER)
+    p_sec_hdr = ps("sh", size=9,  bold=True,  color=WHITE)
+    p_num     = ps("n",  size=8,  align=TA_CENTER)
+    p_text    = ps("tx", size=8)
+    p_ok      = ps("ok", size=12, bold=True,  color=GREEN_FG,  align=TA_CENTER)
+    p_fail    = ps("fl", size=12, bold=True,  color=RED_FG,    align=TA_CENTER)
+    p_na      = ps("na", size=7,  bold=True,  color=GREY,      align=TA_CENTER)
+    p_sp      = ps("sp", size=7,  color=GREY)
+    p_label   = ps("lb", size=9,  bold=True,  color=DARK_PURPLE)
 
     # ── Document ──────────────────────────────────────────────────
     doc_obj = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=LM, rightMargin=RM,
-        topMargin=1.5 * cm, bottomMargin=2.0 * cm,
+        topMargin=1.2 * cm, bottomMargin=1.5 * cm,
     )
     story = []
 
-    # ── HEADER: logo + title + info ───────────────────────────────
+    # ── HEADER: logo + title block + info rows ─────────────────────
     LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
-    logo_cell = PLImage(LOGO_PATH, width=3.5*cm, height=2.0*cm, kind='proportional') \
+    logo_cell = PLImage(LOGO_PATH, width=3.0*cm, height=1.8*cm, kind='proportional') \
                 if os.path.exists(LOGO_PATH) else Paragraph("", p_info)
 
     title_block = [
         Paragraph("Hydraulic Injection Machine", p_title),
-        Spacer(1, 3),
+        Spacer(1, 2),
         Paragraph("PREVENTIVE MAINTENANCE CHECKLIST", p_sub),
     ]
 
-    hw = [USABLE * 0.26, USABLE * 0.74]
+    hw = [USABLE * 0.24, USABLE * 0.76]
+    # Row 0: logo + title;  Row 1: date + machine;  Row 2: shift + technician
     header_tbl = Table(
-        [[logo_cell, title_block],
-         [Paragraph(f"<b>Date:</b>  {date_str}", p_info),
-          Paragraph(f"<b>Machine No.:</b>  {machine_no} &nbsp;&nbsp;&nbsp; <b>Model:</b>  {machine_name}", p_info)],
-         [Paragraph(f"<b>Shift:</b>", p_info),
-          Paragraph(f"<b>Technician:</b>  {tech_name}", p_info)]],
+        [
+            [logo_cell, title_block],
+            [Paragraph(f"<b>Date:</b>  {date_str}", p_info),
+             Paragraph(f"<b>Machine No.:</b>  {machine_no}"
+                       + (f"  &nbsp;&nbsp;  <b>Model:</b>  {machine_name}" if machine_name else ""), p_info)],
+            [Paragraph("<b>Shift:</b>", p_info),
+             Paragraph(f"<b>Maintenance Engineer:</b>  {tech_name}", p_info)],
+        ],
         colWidths=hw,
     )
     header_tbl.setStyle(TableStyle([
-        ('BOX',        (0, 0), (-1, -1), 1.0, MID_GREY),
+        ('BOX',        (0, 0), (-1, -1), 1.2, PURPLE),
         ('INNERGRID',  (0, 0), (-1, -1), 0.3, MID_GREY),
         ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
         ('ALIGN',      (0, 0), (0, 0),   'CENTER'),
         ('BACKGROUND', (0, 0), (-1, 0),  LIGHT_GREY),
-        ('ROWSPAN',    (0, 0), (0, 0),   1),   # logo
         ('SPAN',       (0, 0), (0, 0)),
         ('TOPPADDING',    (0, 0), (-1, -1), 5),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
@@ -1389,44 +1407,55 @@ async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
     story.append(header_tbl)
     story.append(Spacer(1, 0.25 * cm))
 
-    # ── CHECKLIST TABLE ───────────────────────────────────────────
-    COL_N  = 0.85 * cm
-    COL_R  = 2.1  * cm
-    COL_T  = USABLE - COL_N - COL_R
-    col_ws = [COL_N, COL_T, COL_R]
+    # ── CHECKLIST TABLE  (4 columns) ──────────────────────────────
+    # Columns: # | CHECK POINTS | SPARE PART | OK/FAIL
+    COL_N  = 0.70 * cm
+    COL_R  = 1.90 * cm
+    COL_SP = 3.40 * cm
+    COL_T  = USABLE - COL_N - COL_R - COL_SP
+    col_ws = [COL_N, COL_T, COL_SP, COL_R]
 
-    rows = []
-    styles = [
-        ('BOX',         (0, 0), (-1, -1), 1.0, PURPLE),
-        ('INNERGRID',   (0, 0), (-1, -1), 0.3, MID_GREY),
-        ('VALIGN',      (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING',  (0, 0), (-1, -1), 3),
+    rows   = []
+    tstyle = [
+        ('BOX',          (0, 0), (-1, -1), 1.2, PURPLE),
+        ('INNERGRID',    (0, 0), (-1, -1), 0.3, MID_GREY),
+        ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING',   (0, 0), (-1, -1), 3),
         ('BOTTOMPADDING',(0, 0), (-1, -1), 3),
-        ('LEFTPADDING', (0, 0), (-1, -1), 5),
-        ('RIGHTPADDING',(0, 0), (-1, -1), 5),
+        ('LEFTPADDING',  (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
     ]
 
-    # Column header
-    rows.append([Paragraph("م", p_hdr), Paragraph("CHECK  POINTS", p_hdr), Paragraph("OK / FAIL", p_hdr)])
-    styles += [
+    # Column header row
+    rows.append([
+        Paragraph("م", p_hdr),
+        Paragraph("CHECK  POINTS", p_hdr),
+        Paragraph("SPARE  PART", p_hdr),
+        Paragraph("OK / FAIL", p_hdr),
+    ])
+    tstyle += [
         ('BACKGROUND', (0, 0), (-1, 0), DARK_PURPLE),
         ('ALIGN',      (0, 0), (-1, 0), 'CENTER'),
         ('LINEBELOW',  (0, 0), (-1, 0), 1.5, PURPLE),
+        ('ROWBACKGROUND', (0, 0), (-1, 0), DARK_PURPLE),
     ]
 
-    row_i = 1
-    local_q = 0  # counter across all rows for alt-stripe
+    row_i   = 1
+    local_q = 0
 
     for sec in section_order:
-        # Section header spans all columns
-        rows.append([Paragraph("", p_sec),
-                     Paragraph(f"   {sec.upper()}", p_sec),
-                     Paragraph("", p_sec)])
+        # Section header row — spans all 4 columns
+        rows.append([
+            Paragraph("", p_sec_hdr),
+            Paragraph(f"  {sec.upper()}", p_sec_hdr),
+            Paragraph("", p_sec_hdr),
+            Paragraph("", p_sec_hdr),
+        ])
         r = row_i
-        styles += [
-            ('SPAN',       (0, r), (-1, r)),
-            ('BACKGROUND', (0, r), (-1, r), PURPLE),
-            ('LINEABOVE',  (0, r), (-1, r), 0.5, DARK_PURPLE),
+        tstyle += [
+            ('SPAN',          (0, r), (-1, r)),
+            ('BACKGROUND',    (0, r), (-1, r), PURPLE),
+            ('LINEABOVE',     (0, r), (-1, r), 0.8, DARK_PURPLE),
             ('TOPPADDING',    (0, r), (-1, r), 5),
             ('BOTTOMPADDING', (0, r), (-1, r), 5),
         ]
@@ -1435,6 +1464,8 @@ async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
         for i, q in enumerate(sections[sec]):
             local_q += 1
             a = answers_map.get(q["id"])
+
+            # Result cell
             if a is None or a.get("skipped"):
                 result_p = Paragraph("N/A", p_na)
                 bg = None
@@ -1445,44 +1476,66 @@ async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
                 result_p = Paragraph("✗", p_fail)
                 bg = RED_BG
 
-            # Question text (+ note if fail)
+            # Question text (with note sub-line)
             q_text = q.get("text", "")
             if a and a.get("note") and not a.get("skipped"):
                 text_p = Paragraph(
-                    f'{q_text}<br/><font size="8" color="#757575"> ↳ Note: {a["note"]}</font>',
+                    f'{q_text}<br/><font size="7" color="#757575"> ↳ {a["note"]}</font>',
                     p_text,
                 )
             else:
                 text_p = Paragraph(q_text, p_text)
 
-            rows.append([Paragraph(str(i + 1), p_num), text_p, result_p])
+            # Spare part cell
+            sp_val = (a.get("spare_part", "") if a else "") or ""
+            sp_p   = Paragraph(sp_val, p_sp) if sp_val else Paragraph("", p_sp)
+
+            rows.append([Paragraph(str(i + 1), p_num), text_p, sp_p, result_p])
             r = row_i
             if bg:
-                styles.append(('BACKGROUND', (0, r), (-1, r), bg))
+                tstyle.append(('BACKGROUND', (0, r), (-1, r), bg))
+            elif sp_val:
+                tstyle.append(('BACKGROUND', (2, r), (2, r), SP_BG))
             elif local_q % 2 == 0:
-                styles.append(('BACKGROUND', (0, r), (-1, r), LIGHT_GREY))
-            styles += [
+                tstyle.append(('BACKGROUND', (0, r), (-1, r), LIGHT_GREY))
+            tstyle += [
                 ('ALIGN', (0, r), (0, r), 'CENTER'),
-                ('ALIGN', (2, r), (2, r), 'CENTER'),
+                ('ALIGN', (3, r), (3, r), 'CENTER'),
             ]
             row_i += 1
 
     checklist_tbl = Table(rows, colWidths=col_ws, repeatRows=1)
-    checklist_tbl.setStyle(TableStyle(styles))
+    checklist_tbl.setStyle(TableStyle(tstyle))
     story.append(checklist_tbl)
     story.append(Spacer(1, 0.3 * cm))
 
-    # ── REMARKS ───────────────────────────────────────────────────
-    rw = [3.0 * cm, USABLE - 3.0 * cm]
+    # ── REMARKS / SPARE PARTS SUMMARY ─────────────────────────────
+    # Collect all spare parts used across all questions
+    all_parts = [
+        f"• [{a.get('question_id','')}] {a['spare_part']}"
+        for a in expanded if a.get("spare_part")
+    ]
+    # Build question-id → text map for display
+    qtext_map = {q["id"]: q.get("text", "") for q in questions}
+    parts_lines = [
+        f"• {qtext_map.get(a['question_id'], '')} → {a['spare_part']}"
+        for a in expanded if a.get("spare_part")
+    ]
+    parts_str = "<br/>".join(parts_lines) if parts_lines else "—"
+
+    rw = [3.2 * cm, USABLE - 3.2 * cm]
     remarks_tbl = Table(
-        [[Paragraph("<b>Remarks:</b>", p_info), Paragraph(notes_text or "—", p_info)],
-         [Paragraph("<b>Spare parts:</b>", p_info), Paragraph("—", p_info)]],
+        [
+            [Paragraph("<b>Remarks:</b>", p_info), Paragraph(notes_text or "—", p_info)],
+            [Paragraph("<b>Spare Parts Used:</b>", p_info),
+             Paragraph(parts_str, ps("pt", size=8, color=GREY))],
+        ],
         colWidths=rw,
     )
     remarks_tbl.setStyle(TableStyle([
-        ('BOX',       (0, 0), (-1, -1), 0.5, MID_GREY),
+        ('BOX',       (0, 0), (-1, -1), 0.8, PURPLE),
         ('INNERGRID', (0, 0), (-1, -1), 0.3, MID_GREY),
-        ('BACKGROUND',(0, 0), (0, -1),  LIGHT_GREY),
+        ('BACKGROUND',(0, 0), (0, -1),  PURPLE_LIGHT),
         ('VALIGN',    (0, 0), (-1, -1), 'TOP'),
         ('TOPPADDING',    (0, 0), (-1, -1), 5),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
@@ -1492,21 +1545,30 @@ async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
     story.append(remarks_tbl)
     story.append(Spacer(1, 0.3 * cm))
 
-    # ── SIGNATURE ROW ─────────────────────────────────────────────
+    # ── SIGNATURE / TIME ROW ──────────────────────────────────────
     sw = USABLE / 3.0
     sig_tbl = Table([[
-        Paragraph("<b>TIME M/C Received:</b><br/><br/>__________________", p_info),
-        Paragraph("<b>Delivery Time:</b><br/><br/>__________________", p_info),
         Paragraph(
-            "<b>Maintenance Engineer:</b><br/><br/>__________________"
-            "<br/><br/><b>Production Engineer:</b><br/><br/>__________________",
+            f"<b>TIME M/C Received:</b><br/><br/>"
+            f"<font size='11'>{time_received}</font>",
+            p_info,
+        ),
+        Paragraph(
+            f"<b>Delivery Time:</b><br/><br/>"
+            f"<font size='11'>{time_delivered}</font>",
+            p_info,
+        ),
+        Paragraph(
+            f"<b>Maintenance Engineer:</b><br/><br/>"
+            f"<font size='10'>{tech_name}</font>",
             p_info,
         ),
     ]], colWidths=[sw, sw, sw])
     sig_tbl.setStyle(TableStyle([
-        ('BOX',       (0, 0), (-1, -1), 0.5, MID_GREY),
+        ('BOX',       (0, 0), (-1, -1), 0.8, PURPLE),
         ('INNERGRID', (0, 0), (-1, -1), 0.5, MID_GREY),
         ('VALIGN',    (0, 0), (-1, -1), 'TOP'),
+        ('BACKGROUND',(0, 0), (-1, 0),  LIGHT_GREY),
         ('TOPPADDING',    (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
         ('LEFTPADDING',   (0, 0), (-1, -1), 8),
@@ -1533,6 +1595,7 @@ def _expand_answers(answers: list) -> list:
                 "answer": a.get("a"),
                 "numeric_value": a.get("nv"),
                 "note": a.get("n", ""),
+                "spare_part": a.get("sp", ""),
                 "skipped": a.get("a") is None,
             })
         else:

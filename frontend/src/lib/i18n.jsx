@@ -192,6 +192,10 @@ const DICT = {
     start_plan_inspection: "بدء الفحص",
     plan_failures: "أعطال مفتوحة",
     no_failures_machine: "لا توجد أعطال",
+    spare_part: "قطعة غيار",
+    spare_part_placeholder: "قطعة غيار (اختياري)",
+    time_mc_received: "وقت استلام الماكينة",
+    time_delivered: "وقت تسليم الماكينة",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -384,6 +388,10 @@ const DICT = {
     start_plan_inspection: "Start Inspection",
     plan_failures: "Open Failures",
     no_failures_machine: "No open failures",
+    spare_part: "Spare Part",
+    spare_part_placeholder: "Spare part (optional)",
+    time_mc_received: "Time MC Received",
+    time_delivered: "Time Delivered",
   },
 };
 
