@@ -225,6 +225,11 @@ class InspectionUpdate(BaseModel):
     notes: Optional[str] = ""
 
 
+class PreventivePlanCreate(BaseModel):
+    machine_id: str
+    scheduled_date: str  # YYYY-MM-DD
+
+
 class RegisterRequest(BaseModel):
     employee_number: str
     name: str
@@ -1539,6 +1544,7 @@ def _open_failures_pipeline(
     target_number: Optional[str] = None,
     target_type: Optional[str] = None,
     category: Optional[str] = None,
+    target_id: Optional[str] = None,
 ):
     """Latest answer per (target_id, question_id). Only keep those still failing."""
     pre_match: dict = {}
@@ -1548,6 +1554,8 @@ def _open_failures_pipeline(
         pre_match["category"] = category
     if target_number:
         pre_match["target_number"] = {"$regex": f"^{re.escape(target_number)}", "$options": "i"}
+    if target_id:
+        pre_match["target_id"] = target_id
 
     pipe = []
     if pre_match:
@@ -1586,9 +1594,14 @@ async def list_open_failures(
     target_number: Optional[str] = None,
     target_type: Optional[str] = None,
     category: Optional[str] = None,
-    _=Depends(require_admin),
+    target_id: Optional[str] = None,
+    user=Depends(get_current_user),
 ):
-    pipe = _open_failures_pipeline(target_number, target_type, category)
+    if user["role"] not in ("admin", "helper"):
+        raise HTTPException(403, "غير مصرح")
+    if user["role"] == "helper":
+        target_type = "machine"
+    pipe = _open_failures_pipeline(target_number, target_type, category, target_id)
     questions = await db.questions.find({}, {"_id": 0, "id": 1, "text": 1}).to_list(2000)
     qmap = {q["id"]: q for q in questions}
     results = []
@@ -1608,6 +1621,54 @@ async def list_open_failures(
             "since": d.get("latest_at", ""),
         })
     return results
+
+
+# ---------- Preventive Plans ----------
+@api.post("/preventive-plans")
+async def create_preventive_plan(body: PreventivePlanCreate, admin=Depends(require_admin)):
+    machine = await db.machines.find_one({"id": body.machine_id}, {"_id": 0})
+    if not machine:
+        raise HTTPException(404, "المكينة غير موجودة")
+    existing = await db.preventive_plans.find_one({
+        "machine_id": body.machine_id, "scheduled_date": body.scheduled_date
+    })
+    if existing:
+        raise HTTPException(400, "خطة موجودة مسبقاً لهذه المكينة في هذا اليوم")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "machine_id": body.machine_id,
+        "machine_number": machine["number"],
+        "machine_name": machine.get("name", ""),
+        "scheduled_date": body.scheduled_date,
+        "created_by": admin["id"],
+        "created_by_name": admin["name"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.preventive_plans.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.get("/preventive-plans")
+async def list_preventive_plans(date: Optional[str] = None, user=Depends(get_current_user)):
+    if user["role"] not in ("admin", "helper"):
+        raise HTTPException(403, "غير مصرح")
+    q: dict = {}
+    if user["role"] == "helper":
+        today = datetime.now(timezone.utc).date().isoformat()
+        q["scheduled_date"] = today
+    elif date:
+        q["scheduled_date"] = date
+    docs = await db.preventive_plans.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.delete("/preventive-plans/{pid}")
+async def delete_preventive_plan(pid: str, _=Depends(require_admin)):
+    res = await db.preventive_plans.delete_one({"id": pid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "الخطة غير موجودة")
+    return {"ok": True}
 
 
 @api.get("/stats/overview")
@@ -1893,6 +1954,8 @@ async def startup():
 
     await db.registration_requests.create_index("id", unique=True)
     await db.registration_requests.create_index("employee_number")
+    await db.preventive_plans.create_index("id", unique=True)
+    await db.preventive_plans.create_index([("scheduled_date", 1), ("machine_id", 1)])
 
     # Migration: set answer_type=yes_no for any questions missing it (including panels)
     await db.questions.update_many(
