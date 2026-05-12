@@ -14,32 +14,113 @@ import Inspections from "./admin/Inspections";
 import Preventive from "./admin/Preventive";
 import PreventivePlan from "./admin/PreventivePlan";
 import RegistrationRequests from "./admin/RegistrationRequests";
+import BreakdownAdmin from "./admin/Breakdown";
 import {
   ChartBar, Wrench, Question, UsersThree, ClipboardText, Snowflake, ListChecks,
-  WarningOctagon, UserPlus, Drop, Clipboard, CalendarCheck,
+  WarningOctagon, UserPlus, Drop, Clipboard, CalendarCheck, Lightning,
+  CaretDown, CaretRight,
 } from "@phosphor-icons/react";
 
-const TABS = [
-  { key: "overview", label_key: "tab_overview", Icon: ChartBar, Component: Overview },
-  { key: "failures", label_key: "tab_failures", Icon: WarningOctagon, Component: Failures },
-  { key: "inspections", label_key: "tab_inspections", Icon: ClipboardText, Component: Inspections },
-  { key: "preventive", label_key: "tab_preventive", Icon: Clipboard, Component: Preventive },
-  { key: "preventive-plan", label_key: "tab_preventive_plan", Icon: CalendarCheck, Component: PreventivePlan },
-  { key: "machines", label_key: "tab_machines", Icon: Wrench, Component: Machines },
-  { key: "chillers", label_key: "tab_chillers", Icon: Snowflake, Component: Chillers },
-  { key: "cooling-towers", label_key: "tab_cooling_towers", Icon: Drop, Component: CoolingTowers },
-  { key: "panels", label_key: "tab_panels", Icon: ListChecks, Component: Panels },
-  { key: "questions", label_key: "tab_questions", Icon: Question, Component: Questions },
-  { key: "users", label_key: "tab_users", Icon: UsersThree, Component: Users },
-  { key: "requests", label_key: "tab_requests", Icon: UserPlus, Component: RegistrationRequests },
+const NAV = [
+  { key: "overview",    label_key: "tab_overview",    Icon: ChartBar,      Component: Overview },
+  { key: "failures",    label_key: "tab_failures",    Icon: WarningOctagon, Component: Failures },
+  { key: "inspections", label_key: "tab_inspections", Icon: ClipboardText,  Component: Inspections },
+  { key: "breakdown",   label_key: "tab_breakdown",   Icon: Lightning,      Component: BreakdownAdmin },
+  {
+    group: "group_preventive",
+    items: [
+      { key: "preventive",      label_key: "tab_preventive",      Icon: Clipboard,     Component: Preventive },
+      { key: "preventive-plan", label_key: "tab_preventive_plan", Icon: CalendarCheck, Component: PreventivePlan },
+    ],
+  },
+  {
+    group: "group_equipment",
+    items: [
+      { key: "machines",       label_key: "tab_machines",       Icon: Wrench,     Component: Machines },
+      { key: "chillers",       label_key: "tab_chillers",       Icon: Snowflake,  Component: Chillers },
+      { key: "cooling-towers", label_key: "tab_cooling_towers", Icon: Drop,       Component: CoolingTowers },
+      { key: "panels",         label_key: "tab_panels",         Icon: ListChecks, Component: Panels },
+    ],
+  },
+  {
+    group: "group_setup",
+    items: [
+      { key: "questions", label_key: "tab_questions", Icon: Question,   Component: Questions },
+      { key: "users",     label_key: "tab_users",     Icon: UsersThree, Component: Users },
+      { key: "requests",  label_key: "tab_requests",  Icon: UserPlus,   Component: RegistrationRequests },
+    ],
+  },
 ];
+
+function flatItems() {
+  return NAV.flatMap((n) => n.group ? n.items : [n]);
+}
+
+function SidebarItem({ item, active, setActive, badge }) {
+  const { t } = useI18n();
+  const isActive = active === item.key;
+  const { Icon } = item;
+  return (
+    <button
+      onClick={() => setActive(item.key)}
+      data-testid={`admin-tab-${item.key}`}
+      className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold transition-all ${
+        isActive
+          ? "bg-slate-900 text-white"
+          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+      }`}
+    >
+      <Icon size={16} weight={isActive ? "bold" : "regular"} className="shrink-0" />
+      <span className="flex-1 text-start">{t(item.label_key)}</span>
+      {badge > 0 && (
+        <span className="h-5 min-w-[20px] px-1 bg-red-500 text-white text-xs font-bold flex items-center justify-center rounded-full">
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function SidebarGroup({ entry, active, setActive, openGroups, toggleGroup, pendingCount }) {
+  const { t } = useI18n();
+  const isOpen = openGroups[entry.group];
+  const Caret = isOpen ? CaretDown : CaretRight;
+  return (
+    <div>
+      <button
+        onClick={() => toggleGroup(entry.group)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors"
+      >
+        <Caret size={12} weight="bold" />
+        {t(entry.group)}
+      </button>
+      {isOpen && (
+        <div className="pl-2">
+          {entry.items.map((item) => (
+            <SidebarItem
+              key={item.key}
+              item={item}
+              active={active}
+              setActive={setActive}
+              badge={item.key === "requests" ? pendingCount : 0}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const { t, lang } = useI18n();
   const [active, setActive] = useState("overview");
   const [pendingCount, setPendingCount] = useState(0);
+  const [openGroups, setOpenGroups] = useState({
+    group_preventive: true,
+    group_equipment: true,
+    group_setup: true,
+  });
 
-  // Poll pending registration requests count every 2 minutes
   useEffect(() => {
     const fetchCount = async () => {
       try {
@@ -52,50 +133,57 @@ export default function AdminDashboard() {
     return () => clearInterval(id);
   }, []);
 
-  const ActiveComp = TABS.find((tab) => tab.key === active).Component;
+  const toggleGroup = (key) =>
+    setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  const ActiveComp = flatItems().find((i) => i.key === active)?.Component ?? Overview;
 
   return (
     <div className="min-h-screen" data-testid="admin-dashboard">
       <TopBar />
-      <main className="max-w-7xl mx-auto p-6">
-        <div className="mb-6">
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-            {t("admin_panel")}
+      <div className="max-w-[1400px] mx-auto px-4 py-6 flex gap-6">
+        {/* Sidebar */}
+        <aside className="w-52 flex-shrink-0">
+          <div className="sticky top-4">
+            <div className="text-xs font-bold uppercase tracking-widest text-slate-400 px-3 mb-2">
+              {t("admin_panel")}
+            </div>
+            <nav className="space-y-0.5">
+              {NAV.map((entry, idx) =>
+                entry.group ? (
+                  <SidebarGroup
+                    key={entry.group}
+                    entry={entry}
+                    active={active}
+                    setActive={setActive}
+                    openGroups={openGroups}
+                    toggleGroup={toggleGroup}
+                    pendingCount={pendingCount}
+                  />
+                ) : (
+                  <SidebarItem
+                    key={entry.key}
+                    item={entry}
+                    active={active}
+                    setActive={setActive}
+                    badge={0}
+                  />
+                )
+              )}
+            </nav>
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 mt-1">{t("control_center")}</h1>
-        </div>
+        </aside>
 
-        <div className="flex flex-wrap border-b border-slate-200 mb-6 overflow-x-auto">
-          {TABS.map(({ key, label_key, Icon }) => {
-            const isActive = active === key;
-            const showBadge = key === "requests" && pendingCount > 0;
-            return (
-              <button
-                key={key}
-                onClick={() => setActive(key)}
-                className={`px-5 py-4 border-b-4 flex items-center gap-2 font-semibold transition-all whitespace-nowrap ${
-                  isActive
-                    ? "border-slate-900 text-slate-900"
-                    : "border-transparent text-slate-500 hover:text-slate-900"
-                }`}
-                data-testid={`admin-tab-${key}`}
-              >
-                <Icon size={18} weight={isActive ? "bold" : "regular"} />
-                <span>{t(label_key)}</span>
-                {showBadge && (
-                  <span className="h-5 min-w-[20px] px-1 bg-red-500 text-white text-xs font-bold flex items-center justify-center rounded-full">
-                    {pendingCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="fade-in">
-          <ActiveComp onCountChange={active === "requests" ? setPendingCount : undefined} />
-        </div>
-      </main>
+        {/* Main content */}
+        <main className="flex-1 min-w-0">
+          <div className="mb-5">
+            <h1 className="text-2xl font-bold text-slate-900">{t("control_center")}</h1>
+          </div>
+          <div className="fade-in">
+            <ActiveComp onCountChange={active === "requests" ? setPendingCount : undefined} />
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

@@ -5,9 +5,10 @@ import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import TopBar from "../components/TopBar";
 import InspectionForm from "./InspectionForm";
+import BreakdownForm from "./BreakdownForm";
 import {
   Gear, Wrench, Snowflake, ListChecks, ClipboardText, ArrowRight, ArrowLeft, PencilSimple,
-  CheckSquare, WarningCircle, Timer, Drop,
+  CheckSquare, WarningCircle, Timer, Drop, Lightning,
 } from "@phosphor-icons/react";
 
 const EDIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -84,6 +85,7 @@ export default function TechDashboard() {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [history, setHistory] = useState([]);
   const [editInspection, setEditInspection] = useState(null);
+  const [breakdownMode, setBreakdownMode] = useState(false);
 
   const canEdit = (created_at) =>
     Date.now() - new Date(created_at).getTime() < EDIT_WINDOW_MS;
@@ -93,8 +95,8 @@ export default function TechDashboard() {
     setBranch({ category: inspection.category, target_type: inspection.target_type });
   };
 
-  const handleBack = () => { setBranch(null); setEditInspection(null); };
-  const handleSubmitted = () => { setBranch(null); setEditInspection(null); loadHistory(); };
+  const handleBack = () => { setBranch(null); setEditInspection(null); setBreakdownMode(false); };
+  const handleSubmitted = () => { setBranch(null); setEditInspection(null); setBreakdownMode(false); loadHistory(); };
 
   const loadHistory = async () => {
     try {
@@ -119,6 +121,17 @@ export default function TechDashboard() {
     (sum, h) => sum + (h.answers || []).filter((a) => a.answer === false).length, 0,
   );
   const lastInspection = history[0] || null;
+
+  if (breakdownMode) {
+    return (
+      <div className="min-h-screen" data-testid="tech-dashboard">
+        <TopBar />
+        <main className="max-w-7xl mx-auto p-6">
+          <BreakdownForm onBack={handleBack} onSubmitted={handleSubmitted} />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen" data-testid="tech-dashboard">
@@ -222,6 +235,22 @@ export default function TechDashboard() {
                     </button>
                   );
                 })}
+
+                {/* Breakdown card — visible to all technicians */}
+                <button
+                  onClick={() => setBreakdownMode(true)}
+                  className="group bg-white border border-red-200 p-7 text-start hover:bg-red-700 hover:text-white transition-all duration-150"
+                  data-testid="branch-breakdown"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="h-14 w-14 bg-red-700 text-white flex items-center justify-center group-hover:bg-white group-hover:text-red-700">
+                      <Lightning size={28} weight="bold" />
+                    </div>
+                    <Arrow size={22} className="text-slate-400 group-hover:text-white" weight="bold" />
+                  </div>
+                  <h3 className="text-2xl font-bold mt-5">{t("report_breakdown")}</h3>
+                  <p className="text-sm mt-2 leading-relaxed opacity-80">{t("report_breakdown_desc")}</p>
+                </button>
               </div>
             )}
 
