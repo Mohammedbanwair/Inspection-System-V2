@@ -28,11 +28,25 @@ function calcDuration(start, end) {
   return `${Math.floor(diff / 60)}h ${String(diff % 60).padStart(2, "0")}m`;
 }
 
+function SpecialtyBadge({ specialty, ar }) {
+  if (!specialty) return null;
+  const isElec = specialty === "electrical";
+  return (
+    <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${
+      isElec ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
+    }`}>
+      {isElec ? (ar ? "كهرباء" : "Elec") : (ar ? "ميكانيكا" : "Mech")}
+    </span>
+  );
+}
+
 function ManageReasons({ t, ar }) {
   const [reasons, setReasons] = useState([]);
   const [newText, setNewText] = useState("");
+  const [newSpecialty, setNewSpecialty] = useState("");
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState("");
+  const [editSpecialty, setEditSpecialty] = useState("");
   const [saving, setSaving] = useState(false);
 
   const load = () =>
@@ -45,17 +59,23 @@ function ManageReasons({ t, ar }) {
     if (!newText.trim()) return;
     setSaving(true);
     try {
-      await api.post("/downtime-reasons", { text: newText.trim() });
-      setNewText("");
+      await api.post("/downtime-reasons", {
+        text: newText.trim(),
+        specialty: newSpecialty || null,
+      });
+      setNewText(""); setNewSpecialty("");
       load();
     } catch (err) { toast.error(formatApiError(err)); }
     finally { setSaving(false); }
   };
 
-  const save = async (id) => {
+  const saveEdit = async (id) => {
     if (!editText.trim()) return;
     try {
-      await api.patch(`/downtime-reasons/${id}`, { text: editText.trim() });
+      await api.patch(`/downtime-reasons/${id}`, {
+        text: editText.trim(),
+        specialty: editSpecialty || null,
+      });
       setEditId(null);
       load();
     } catch (err) { toast.error(formatApiError(err)); }
@@ -66,6 +86,15 @@ function ManageReasons({ t, ar }) {
     try { await api.delete(`/downtime-reasons/${id}`); load(); }
     catch (err) { toast.error(formatApiError(err)); }
   };
+
+  const specialtySelect = (value, onChange, cls = "") => (
+    <select value={value} onChange={(e) => onChange(e.target.value)}
+            className={`h-9 px-2 border border-slate-300 text-xs bg-white ${cls}`}>
+      <option value="">{ar ? "الكل" : "All"}</option>
+      <option value="electrical">{ar ? "كهرباء" : "Electrical"}</option>
+      <option value="mechanical">{ar ? "ميكانيكا" : "Mechanical"}</option>
+    </select>
+  );
 
   return (
     <div className="space-y-2">
@@ -80,7 +109,8 @@ function ManageReasons({ t, ar }) {
                   className="flex-1 h-9 px-3 border border-slate-300 text-sm"
                   autoFocus
                 />
-                <button onClick={() => save(r.id)}
+                {specialtySelect(editSpecialty, setEditSpecialty, "w-28")}
+                <button onClick={() => saveEdit(r.id)}
                         className="h-9 px-3 bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700">
                   {t("save")}
                 </button>
@@ -92,7 +122,8 @@ function ManageReasons({ t, ar }) {
             ) : (
               <>
                 <span className="flex-1 text-sm">{r.text}</span>
-                <button onClick={() => { setEditId(r.id); setEditText(r.text); }}
+                <SpecialtyBadge specialty={r.specialty} ar={ar} />
+                <button onClick={() => { setEditId(r.id); setEditText(r.text); setEditSpecialty(r.specialty || ""); }}
                         className="h-8 w-8 border border-slate-200 hover:bg-white flex items-center justify-center text-slate-500">
                   <PencilSimple size={13} />
                 </button>
@@ -113,6 +144,7 @@ function ManageReasons({ t, ar }) {
           placeholder={ar ? "أضف سبباً جديداً..." : "Add new reason..."}
           className="flex-1 h-10 px-3 border border-slate-300 text-sm"
         />
+        {specialtySelect(newSpecialty, setNewSpecialty, "w-28")}
         <button type="submit" disabled={saving || !newText.trim()}
                 className="h-10 px-4 bg-[#6B2D6B] text-white font-semibold text-sm flex items-center gap-1.5 hover:bg-[#5a2559] disabled:opacity-50">
           <Plus size={14} weight="bold" />
@@ -128,18 +160,24 @@ export default function Breakdown() {
   const ar = lang === "ar";
 
   const [list, setList] = useState([]);
+  const [machines, setMachines] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [machineNum, setMachineNum] = useState("");
+  const [machineId, setMachineId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [status, setStatus] = useState("");
   const [showReasons, setShowReasons] = useState(false);
 
+  useEffect(() => {
+    api.get("/machines").then(({ data }) => setMachines(data)).catch(() => {});
+  }, []);
+
   const load = async () => {
     setLoading(true);
     try {
       const params = {};
-      if (machineNum) params.machine_number = machineNum;
+      const sel = machines.find((m) => m.id === machineId);
+      if (sel) params.machine_number = sel.number;
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
       if (status) params.status = status;
@@ -152,11 +190,11 @@ export default function Breakdown() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, []); // eslint-disable-line
 
   const apply = (e) => { e.preventDefault(); load(); };
   const reset = () => {
-    setMachineNum(""); setDateFrom(""); setDateTo(""); setStatus("");
+    setMachineId(""); setDateFrom(""); setDateTo(""); setStatus("");
     setTimeout(load, 0);
   };
 
@@ -181,10 +219,11 @@ export default function Breakdown() {
     try {
       const token = localStorage.getItem("token");
       const params = new URLSearchParams();
-      if (machineNum) params.append("machine_number", machineNum);
-      if (dateFrom)   params.append("date_from", dateFrom);
-      if (dateTo)     params.append("date_to", dateTo);
-      if (status)     params.append("status", status);
+      const sel = machines.find((m) => m.id === machineId);
+      if (sel)     params.append("machine_number", sel.number);
+      if (dateFrom) params.append("date_from", dateFrom);
+      if (dateTo)   params.append("date_to", dateTo);
+      if (status)   params.append("status", status);
       const res = await fetch(`${API}/breakdowns/export/excel?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
@@ -251,19 +290,24 @@ export default function Breakdown() {
       {/* Filters */}
       <form onSubmit={apply} className="bg-white border border-slate-200 p-5 mb-4">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <input
-            type="text"
-            placeholder={ar ? "رقم المكينة" : "Machine #"}
-            value={machineNum}
-            onChange={(e) => setMachineNum(e.target.value)}
-            className="h-11 px-3 border border-slate-200 text-sm"
-          />
+          <select
+            value={machineId}
+            onChange={(e) => setMachineId(e.target.value)}
+            className="h-11 px-3 border border-slate-200 text-sm bg-white"
+          >
+            <option value="">{ar ? "كل المكائن" : "All Machines"}</option>
+            {machines.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.number}{m.name ? ` — ${m.name}` : ""}
+              </option>
+            ))}
+          </select>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
                  className="h-11 px-3 border border-slate-200" />
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
                  className="h-11 px-3 border border-slate-200" />
           <select value={status} onChange={(e) => setStatus(e.target.value)}
-                  className="h-11 px-3 border border-slate-200">
+                  className="h-11 px-3 border border-slate-200 bg-white">
             <option value="">{t("all_statuses")}</option>
             <option value="submitted">{t("bd_open")}</option>
             <option value="resolved">{t("resolved")}</option>

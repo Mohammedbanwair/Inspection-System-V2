@@ -27,10 +27,10 @@ export default function Inspections() {
   const [items, setItems]       = useState([]);  // dropdown items fetched from API
 
   // Derived values
-  const isSpecial = spec === "cooling_tower" || spec === "preventive";
+  const isSpecial = spec === "preventive";
 
   const tTypeOptions = spec === "electrical" ? ["machine", "panel"]
-                     : spec === "mechanical" ? ["machine", "chiller"]
+                     : spec === "mechanical" ? ["machine", "chiller", "cooling_tower"]
                      : [];
 
   const needsSubGroup = !isSpecial && (tType === "machine" || tType === "panel");
@@ -42,16 +42,16 @@ export default function Inspections() {
     : [];
 
   const category = (() => {
-    if (spec === "cooling_tower") return "cooling_tower";
-    if (spec === "preventive")    return "preventive";
+    if (spec === "preventive") return "preventive";
     if (spec === "electrical") {
       if (tType === "machine") return "electrical";
       if (tType === "panel" && subGroup === "main") return "panels_main";
       if (tType === "panel" && subGroup === "sub")  return "panels_sub";
     }
     if (spec === "mechanical") {
-      if (tType === "machine") return "mechanical";
-      if (tType === "chiller") return "chiller";
+      if (tType === "machine")        return "mechanical";
+      if (tType === "chiller")        return "chiller";
+      if (tType === "cooling_tower")  return "cooling_tower";
     }
     return "";
   })();
@@ -60,19 +60,15 @@ export default function Inspections() {
 
   // Fetch equipment list whenever spec/type/sub-group changes
   useEffect(() => {
-    if (spec === "cooling_tower") {
-      api.get("/cooling-towers").then(({ data }) => setItems(data)).catch(() => setItems([]));
-      setTargetNum("");
-      return;
-    }
     if (spec === "preventive") {
       api.get("/machines").then(({ data }) => setItems(data)).catch(() => setItems([]));
       setTargetNum("");
       return;
     }
     if (!tType) { setItems([]); return; }
-    const endpoint = tType === "machine" ? "/machines"
-                   : tType === "panel"   ? "/panels"
+    const endpoint = tType === "machine"        ? "/machines"
+                   : tType === "panel"          ? "/panels"
+                   : tType === "cooling_tower"  ? "/cooling-towers"
                    : "/chillers";
     const params = {};
     if (tType === "machine" && subGroup) params.group = subGroup;
@@ -207,7 +203,6 @@ export default function Inspections() {
               <option value="">{ar ? "— اختر —" : "— Select —"}</option>
               <option value="electrical">{t("cat_electrical")}</option>
               <option value="mechanical">{t("cat_mechanical")}</option>
-              <option value="cooling_tower">{t("cat_cooling_tower")}</option>
             </select>
           </div>
 
