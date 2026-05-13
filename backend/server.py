@@ -235,6 +235,14 @@ class PreventivePlanCreate(BaseModel):
     scheduled_date: str  # YYYY-MM-DD
 
 
+class BreakdownCreate(BaseModel):
+    machine_id: str
+    brief_description: str
+    repair_description: Optional[str] = ""
+    start_time: Optional[str] = ""
+    end_time: Optional[str] = ""
+
+
 class RegisterRequest(BaseModel):
     employee_number: str
     name: str
@@ -1734,6 +1742,83 @@ async def delete_preventive_plan(pid: str, _=Depends(require_admin)):
     return {"ok": True}
 
 
+# ---------- Breakdowns ----------
+@api.post("/breakdowns")
+async def create_breakdown(body: BreakdownCreate, user=Depends(get_current_user)):
+    if user["role"] not in ("admin", "technician"):
+        raise HTTPException(403, "غير مصرح")
+    machine = await db.machines.find_one({"id": body.machine_id}, {"_id": 0})
+    if not machine:
+        raise HTTPException(404, "المكينة غير موجودة")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "machine_id": body.machine_id,
+        "machine_number": machine["number"],
+        "machine_name": machine.get("name", ""),
+        "brief_description": body.brief_description,
+        "repair_description": body.repair_description or "",
+        "start_time": body.start_time or "",
+        "end_time": body.end_time or "",
+        "technician_id": user["id"],
+        "technician_name": user["name"],
+        "status": "submitted",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.breakdowns.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.get("/breakdowns")
+async def list_breakdowns(
+    machine_number: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    status: Optional[str] = None,
+    technician_id: Optional[str] = None,
+    user=Depends(get_current_user),
+):
+    if user["role"] not in ("admin", "technician"):
+        raise HTTPException(403, "غير مصرح")
+    q: dict = {}
+    if user["role"] == "technician":
+        q["technician_id"] = user["id"]
+    else:
+        if technician_id:
+            q["technician_id"] = technician_id
+    if machine_number:
+        q["machine_number"] = {"$regex": f"^{re.escape(machine_number)}", "$options": "i"}
+    if status:
+        q["status"] = status
+    if date_from or date_to:
+        rng: dict = {}
+        if date_from: rng["$gte"] = date_from
+        if date_to: rng["$lte"] = date_to + "T23:59:59"
+        q["created_at"] = rng
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.patch("/breakdowns/{bid}/resolve")
+async def resolve_breakdown(bid: str, _=Depends(require_admin)):
+    doc = await db.breakdowns.find_one({"id": bid})
+    if not doc:
+        raise HTTPException(404, "غير موجود")
+    await db.breakdowns.update_one(
+        {"id": bid},
+        {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True}
+
+
+@api.delete("/breakdowns/{bid}")
+async def delete_breakdown(bid: str, _=Depends(require_admin)):
+    res = await db.breakdowns.delete_one({"id": bid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "غير موجود")
+    return {"ok": True}
+
+
 @api.get("/stats/overview")
 async def stats_overview(_=Depends(require_admin)):
     total_inspections = await db.inspections.count_documents({})
@@ -2019,6 +2104,10 @@ async def startup():
     await db.registration_requests.create_index("employee_number")
     await db.preventive_plans.create_index("id", unique=True)
     await db.preventive_plans.create_index([("scheduled_date", 1), ("machine_id", 1)])
+    await db.breakdowns.create_index("id", unique=True)
+    await db.breakdowns.create_index("status")
+    await db.breakdowns.create_index("created_at")
+    await db.breakdowns.create_index("technician_id")
 
     # Migration: set answer_type=yes_no for any questions missing it (including panels)
     await db.questions.update_many(
