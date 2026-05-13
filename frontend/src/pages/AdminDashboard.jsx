@@ -42,6 +42,7 @@ const NAV = [
       { key: "panels",         label_key: "tab_panels",         Icon: ListChecks, Component: Panels },
     ],
   },
+  // Note: Chillers & Cooling Towers are adjacent (both mechanical cooling equipment)
   {
     group: "group_setup",
     items: [
@@ -64,14 +65,14 @@ function SidebarItem({ item, active, setActive, badge }) {
     <button
       onClick={() => setActive(item.key)}
       data-testid={`admin-tab-${item.key}`}
-      className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold transition-all ${
+      className={`w-full flex items-center gap-3 px-4 py-3 text-[13px] font-semibold transition-all rounded-sm ${
         isActive
           ? "bg-slate-900 text-white"
           : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
       }`}
     >
-      <Icon size={16} weight={isActive ? "bold" : "regular"} className="shrink-0" />
-      <span className="flex-1 text-start">{t(item.label_key)}</span>
+      <Icon size={17} weight={isActive ? "bold" : "regular"} className="shrink-0" />
+      <span className="flex-1 text-start leading-tight">{t(item.label_key)}</span>
       {badge > 0 && (
         <span className="h-5 min-w-[20px] px-1 bg-red-500 text-white text-xs font-bold flex items-center justify-center rounded-full">
           {badge}
@@ -86,16 +87,16 @@ function SidebarGroup({ entry, active, setActive, openGroups, toggleGroup, pendi
   const isOpen = openGroups[entry.group];
   const Caret = isOpen ? CaretDown : CaretRight;
   return (
-    <div>
+    <div className="mt-1">
       <button
         onClick={() => toggleGroup(entry.group)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-[11px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-700 transition-colors"
       >
-        <Caret size={12} weight="bold" />
+        <Caret size={11} weight="bold" />
         {t(entry.group)}
       </button>
       {isOpen && (
-        <div className="pl-2">
+        <div className="ps-2">
           {entry.items.map((item) => (
             <SidebarItem
               key={item.key}
@@ -143,9 +144,9 @@ export default function AdminDashboard() {
       <TopBar />
       <div className="max-w-[1400px] mx-auto px-4 py-6 flex gap-6">
         {/* Sidebar */}
-        <aside className="w-52 flex-shrink-0">
+        <aside className="w-64 flex-shrink-0">
           <div className="sticky top-4">
-            <div className="text-xs font-bold uppercase tracking-widest text-slate-400 px-3 mb-2">
+            <div className="text-xs font-bold uppercase tracking-widest text-slate-400 px-4 mb-3">
               {t("admin_panel")}
             </div>
             <nav className="space-y-0.5">

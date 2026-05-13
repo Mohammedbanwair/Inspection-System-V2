@@ -208,7 +208,6 @@ export default function Inspections() {
               <option value="electrical">{t("cat_electrical")}</option>
               <option value="mechanical">{t("cat_mechanical")}</option>
               <option value="cooling_tower">{t("cat_cooling_tower")}</option>
-              <option value="preventive">{t("cat_preventive")}</option>
             </select>
           </div>
 
