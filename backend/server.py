@@ -243,6 +243,13 @@ class BreakdownCreate(BaseModel):
     end_time: Optional[str] = ""
 
 
+class DowntimeReasonCreate(BaseModel):
+    text: str
+
+class DowntimeReasonUpdate(BaseModel):
+    text: Optional[str] = None
+
+
 class RegisterRequest(BaseModel):
     employee_number: str
     name: str
@@ -1742,6 +1749,24 @@ async def delete_preventive_plan(pid: str, _=Depends(require_admin)):
     return {"ok": True}
 
 
+def _calc_duration(start_str: str, end_str: str) -> str:
+    """Parse 12h time strings (e.g. '10:30 PM') and return duration like '4h 30m'."""
+    import re as _re
+    def _p(s):
+        if not s: return None
+        m = _re.match(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$', s.strip(), _re.IGNORECASE)
+        if not m: return None
+        h, mn, ap = int(m.group(1)), int(m.group(2)), m.group(3).upper()
+        if ap == 'PM' and h != 12: h += 12
+        if ap == 'AM' and h == 12: h = 0
+        return h * 60 + mn
+    s, e = _p(start_str), _p(end_str)
+    if s is None or e is None: return "—"
+    diff = e - s
+    if diff < 0: diff += 1440  # cross-midnight (max 24h shift)
+    return f"{diff // 60}h {diff % 60:02d}m"
+
+
 # ---------- Breakdowns ----------
 @api.post("/breakdowns")
 async def create_breakdown(body: BreakdownCreate, user=Depends(get_current_user)):
@@ -1817,6 +1842,230 @@ async def delete_breakdown(bid: str, _=Depends(require_admin)):
     if res.deleted_count == 0:
         raise HTTPException(404, "غير موجود")
     return {"ok": True}
+
+
+# ---------- Downtime Reasons ----------
+@api.get("/downtime-reasons")
+async def list_downtime_reasons(_=Depends(get_current_user)):
+    docs = await db.downtime_reasons.find({}, {"_id": 0}).sort("order", 1).to_list(200)
+    return docs
+
+
+@api.post("/downtime-reasons")
+async def create_downtime_reason(body: DowntimeReasonCreate, _=Depends(require_admin)):
+    count = await db.downtime_reasons.count_documents({})
+    doc = {
+        "id": str(uuid.uuid4()),
+        "text": body.text.strip(),
+        "order": count,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.downtime_reasons.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.patch("/downtime-reasons/{rid}")
+async def update_downtime_reason(rid: str, body: DowntimeReasonUpdate, _=Depends(require_admin)):
+    update: dict = {}
+    if body.text is not None:
+        update["text"] = body.text.strip()
+    if not update:
+        raise HTTPException(400, "No fields to update")
+    await db.downtime_reasons.update_one({"id": rid}, {"$set": update})
+    doc = await db.downtime_reasons.find_one({"id": rid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Not found")
+    return doc
+
+
+@api.delete("/downtime-reasons/{rid}")
+async def delete_downtime_reason(rid: str, _=Depends(require_admin)):
+    res = await db.downtime_reasons.delete_one({"id": rid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Not found")
+    return {"ok": True}
+
+
+@api.get("/breakdowns/export/excel")
+async def export_breakdowns_excel(
+    machine_number: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    status: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    q: dict = {}
+    if machine_number:
+        q["machine_number"] = {"$regex": f"^{re.escape(machine_number)}", "$options": "i"}
+    if status:
+        q["status"] = status
+    if date_from or date_to:
+        rng: dict = {}
+        if date_from: rng["$gte"] = date_from
+        if date_to: rng["$lte"] = date_to + "T23:59:59"
+        q["created_at"] = rng
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+
+    PURPLE       = "6B2D6B"
+    PURPLE_LIGHT = "F3E8F3"
+    WHITE        = "FFFFFF"
+    HEADER_BG    = "4A1442"
+    GREEN_BG     = "E8F5E9"
+    GREEN_FG     = "2E7D32"
+    AMBER_BG     = "FFF8E1"
+    AMBER_FG     = "F57F17"
+    thin  = Side(style="thin",   color="CCCCCC")
+    thick = Side(style="medium", color=PURPLE)
+
+    def cb(top=None, bottom=None, left=None, right=None):
+        return Border(
+            top=top    or thin,
+            bottom=bottom or thin,
+            left=left  or thin,
+            right=right or thin,
+        )
+
+    HEADERS    = ["#", "Date", "Machine Number", "Downtime Reason", "Technician",
+                  "Start Time", "End Time", "Duration", "Repair Description", "Status"]
+    COL_WIDTHS = [5,   20,     16,               34,                22,
+                  13,         13,        13,         40,                  13]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Machine Downtime"
+    ws.sheet_view.showGridLines = False
+
+    for i, w in enumerate(COL_WIDTHS, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    last_col = get_column_letter(len(HEADERS))
+
+    # Row 1 spacing
+    ws.row_dimensions[1].height = 8
+    for c in range(1, len(HEADERS) + 1):
+        ws.cell(row=1, column=c).fill = PatternFill("solid", fgColor=WHITE)
+
+    # Row 2 logo
+    ws.row_dimensions[2].height = 80
+    ws.merge_cells(f"A2:{last_col}2")
+    ws["A2"].fill = PatternFill("solid", fgColor=WHITE)
+    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
+    if os.path.exists(LOGO_PATH):
+        img = XLImage(LOGO_PATH)
+        img.width  = sum(COL_WIDTHS) * 7
+        img.height = 82
+        img.anchor = "A2"
+        ws.add_image(img)
+
+    # Row 3 title
+    ws.row_dimensions[3].height = 38
+    ws.merge_cells(f"A3:{last_col}3")
+    tc = ws["A3"]
+    tc.value = "Machine Downtime Report"
+    tc.font  = Font(name="Arial", bold=True, size=16, color=PURPLE)
+    tc.fill  = PatternFill("solid", fgColor=WHITE)
+    tc.alignment = Alignment(horizontal="center", vertical="center")
+    tc.border = Border(bottom=Side(style="medium", color=PURPLE))
+
+    # Row 4 info bar
+    ws.row_dimensions[4].height = 28
+    ws.merge_cells(f"A4:{last_col}4")
+    period = ""
+    if date_from and date_to:
+        period = f"   |   Period: {date_from}  to  {date_to}"
+    elif date_from:
+        period = f"   |   From: {date_from}"
+    ic = ws["A4"]
+    ic.value = f"   Total Records: {len(docs)}{period}"
+    ic.font  = Font(name="Arial", bold=True, size=12, color=WHITE)
+    ic.fill  = PatternFill("solid", fgColor=HEADER_BG)
+    ic.alignment = Alignment(horizontal="left", vertical="center")
+
+    # Row 5 column headers
+    ws.row_dimensions[5].height = 30
+    for ci, hdr in enumerate(HEADERS, 1):
+        cl   = get_column_letter(ci)
+        cell = ws[f"{cl}5"]
+        cell.value = hdr
+        cell.font  = Font(name="Arial", bold=True, size=11, color=WHITE)
+        cell.fill  = PatternFill("solid", fgColor=HEADER_BG)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = Border(
+            top=thick, bottom=thick,
+            left=thick if ci == 1 else thin,
+            right=thick if ci == len(HEADERS) else thin,
+        )
+
+    # Data rows
+    for ri, doc in enumerate(docs):
+        row = 6 + ri
+        ws.row_dimensions[row].height = 22
+        bg    = PURPLE_LIGHT if ri % 2 == 0 else WHITE
+        stat  = doc.get("status", "")
+        dur   = _calc_duration(doc.get("start_time", ""), doc.get("end_time", ""))
+        mname = doc.get("machine_number", "")
+        if doc.get("machine_name"):
+            mname += f" — {doc['machine_name']}"
+        values = [
+            ri + 1,
+            doc.get("created_at", "")[:10],
+            mname,
+            doc.get("brief_description", ""),
+            doc.get("technician_name", ""),
+            doc.get("start_time", "") or "—",
+            doc.get("end_time", "")   or "—",
+            dur,
+            doc.get("repair_description", "") or "—",
+            "Resolved" if stat == "resolved" else "Open",
+        ]
+        for ci, val in enumerate(values, 1):
+            cl   = get_column_letter(ci)
+            cell = ws[f"{cl}{row}"]
+            cell.value = val
+            cell.font  = Font(name="Arial", size=10)
+            cell.alignment = Alignment(
+                horizontal="center" if ci in (1, 6, 7, 8, 10) else "left",
+                vertical="center", wrap_text=(ci in (4, 9)),
+            )
+            cell.border = Border(
+                top=thin, bottom=thin,
+                left=thick if ci == 1 else thin,
+                right=thick if ci == len(HEADERS) else thin,
+            )
+            if ci == 10:
+                if stat == "resolved":
+                    cell.font = Font(name="Arial", bold=True, size=10, color=GREEN_FG)
+                    cell.fill = PatternFill("solid", fgColor=GREEN_BG)
+                else:
+                    cell.font = Font(name="Arial", bold=True, size=10, color=AMBER_FG)
+                    cell.fill = PatternFill("solid", fgColor=AMBER_BG)
+            elif ci == 8:
+                cell.font = Font(name="Arial", bold=True, size=10, color="6B2D6B")
+                cell.fill = PatternFill("solid", fgColor=bg)
+            else:
+                cell.fill = PatternFill("solid", fgColor=bg)
+
+    # Bottom border on last data row
+    last_row = 5 + max(len(docs), 1)
+    for ci in range(1, len(HEADERS) + 1):
+        cl   = get_column_letter(ci)
+        cell = ws[f"{cl}{last_row}"]
+        cell.border = Border(
+            top=cell.border.top, bottom=thick,
+            left=thick if ci == 1 else thin,
+            right=thick if ci == len(HEADERS) else thin,
+        )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"machine_downtime_{date_from or 'all'}_{date_to or 'all'}.xlsx"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @api.get("/stats/overview")
@@ -2108,6 +2357,29 @@ async def startup():
     await db.breakdowns.create_index("status")
     await db.breakdowns.create_index("created_at")
     await db.breakdowns.create_index("technician_id")
+
+    await db.downtime_reasons.create_index("id", unique=True)
+    await db.downtime_reasons.create_index("order")
+
+    # Seed default downtime reasons if none exist
+    if await db.downtime_reasons.count_documents({}) == 0:
+        default_reasons = [
+            "Hydraulic Failure",
+            "Electrical Fault",
+            "Mechanical Breakdown",
+            "Heating / Temperature Issue",
+            "Water / Oil Leakage",
+            "Abnormal Noise or Vibration",
+            "Machine Not Starting",
+            "Sensor / Control Error",
+            "Mold / Clamp Issue",
+        ]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await db.downtime_reasons.insert_many([
+            {"id": str(uuid.uuid4()), "text": t, "order": i, "created_at": now_iso}
+            for i, t in enumerate(default_reasons)
+        ])
+        logger.info("Seeded 9 default downtime reasons")
 
     # Migration: set answer_type=yes_no for any questions missing it (including panels)
     await db.questions.update_many(
