@@ -245,9 +245,11 @@ class BreakdownCreate(BaseModel):
 
 class DowntimeReasonCreate(BaseModel):
     text: str
+    specialty: Optional[Literal["electrical", "mechanical"]] = None
 
 class DowntimeReasonUpdate(BaseModel):
     text: Optional[str] = None
+    specialty: Optional[Literal["electrical", "mechanical"]] = None
 
 
 class RegisterRequest(BaseModel):
@@ -479,11 +481,15 @@ class MachineCreate(BaseModel):
     number: str
     name: Optional[str] = ""
     group: Literal["A", "B"] = "A"
+    manufacturing_year: Optional[str] = ""
+    serial_number: Optional[str] = ""
 
 class MachineUpdate(BaseModel):
     number: Optional[str] = None
     name: Optional[str] = None
     group: Optional[Literal["A", "B"]] = None
+    manufacturing_year: Optional[str] = None
+    serial_number: Optional[str] = None
 
 
 @api.get("/machines")
@@ -502,6 +508,8 @@ async def create_machine(body: MachineCreate, _=Depends(require_admin)):
     count = await db.machines.count_documents({})
     doc = {"id": str(uuid.uuid4()), "number": num, "name": body.name or "",
            "group": body.group, "sort_order": count,
+           "manufacturing_year": body.manufacturing_year or "",
+           "serial_number": body.serial_number or "",
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.machines.insert_one(doc); doc.pop("_id", None)
     return doc
@@ -524,6 +532,118 @@ async def patch_machine(iid: str, body: MachineUpdate, _=Depends(require_admin))
     d = await db.machines.find_one({"id": iid}, {"_id": 0})
     if not d: raise HTTPException(404, "المكينة غير موجودة")
     return d
+
+
+@api.get("/machines/export/excel")
+async def export_machines_excel(_=Depends(require_admin)):
+    machines = await db.machines.find({}, {"_id": 0}).sort([("sort_order", 1), ("number", 1)]).to_list(2000)
+
+    PURPLE       = "6B2D6B"
+    PURPLE_LIGHT = "F3E8F3"
+    WHITE        = "FFFFFF"
+    HEADER_BG    = "4A1442"
+    thin  = Side(style="thin",   color="CCCCCC")
+    thick = Side(style="medium", color=PURPLE)
+
+    HEADERS    = ["#", "Machine Number", "Name / Model", "Group",
+                  "Serial Number", "Manufacturing Year"]
+    COL_WIDTHS = [5,   18,               28,              10,
+                  22,                  18]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Machines"
+    ws.sheet_view.showGridLines = False
+    for i, w in enumerate(COL_WIDTHS, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    last_col = get_column_letter(len(HEADERS))
+
+    ws.row_dimensions[1].height = 8
+    for c in range(1, len(HEADERS) + 1):
+        ws.cell(row=1, column=c).fill = PatternFill("solid", fgColor=WHITE)
+
+    ws.row_dimensions[2].height = 80
+    ws.merge_cells(f"A2:{last_col}2")
+    ws["A2"].fill = PatternFill("solid", fgColor=WHITE)
+    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
+    if os.path.exists(LOGO_PATH):
+        img = XLImage(LOGO_PATH)
+        img.width  = sum(COL_WIDTHS) * 7
+        img.height = 82
+        img.anchor = "A2"
+        ws.add_image(img)
+
+    ws.row_dimensions[3].height = 38
+    ws.merge_cells(f"A3:{last_col}3")
+    tc = ws["A3"]
+    tc.value = "Machine List"
+    tc.font  = Font(name="Arial", bold=True, size=16, color=PURPLE)
+    tc.fill  = PatternFill("solid", fgColor=WHITE)
+    tc.alignment = Alignment(horizontal="center", vertical="center")
+    tc.border = Border(bottom=Side(style="medium", color=PURPLE))
+
+    ws.row_dimensions[4].height = 28
+    ws.merge_cells(f"A4:{last_col}4")
+    ic = ws["A4"]
+    ic.value = f"   Total Machines: {len(machines)}"
+    ic.font  = Font(name="Arial", bold=True, size=12, color=WHITE)
+    ic.fill  = PatternFill("solid", fgColor=HEADER_BG)
+    ic.alignment = Alignment(horizontal="left", vertical="center")
+
+    ws.row_dimensions[5].height = 30
+    for ci, hdr in enumerate(HEADERS, 1):
+        cl   = get_column_letter(ci)
+        cell = ws[f"{cl}5"]
+        cell.value = hdr
+        cell.font  = Font(name="Arial", bold=True, size=11, color=WHITE)
+        cell.fill  = PatternFill("solid", fgColor=HEADER_BG)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = Border(
+            top=thick, bottom=thick,
+            left=thick if ci == 1 else thin,
+            right=thick if ci == len(HEADERS) else thin,
+        )
+
+    for ri, m in enumerate(machines):
+        row = 6 + ri
+        ws.row_dimensions[row].height = 22
+        bg = PURPLE_LIGHT if ri % 2 == 0 else WHITE
+        values = [
+            ri + 1,
+            m.get("number", ""),
+            m.get("name", "") or "—",
+            f"Group {m.get('group', 'A')}",
+            m.get("serial_number", "") or "—",
+            m.get("manufacturing_year", "") or "—",
+        ]
+        for ci, val in enumerate(values, 1):
+            cl   = get_column_letter(ci)
+            cell = ws[f"{cl}{row}"]
+            cell.value = val
+            cell.font  = Font(name="Arial", size=10, bold=(ci == 2))
+            cell.fill  = PatternFill("solid", fgColor=bg)
+            cell.alignment = Alignment(horizontal="center" if ci in (1, 4) else "left", vertical="center")
+            cell.border = Border(
+                top=thin, bottom=thin,
+                left=thick if ci == 1 else thin,
+                right=thick if ci == len(HEADERS) else thin,
+            )
+
+    last_row = 5 + max(len(machines), 1)
+    for ci in range(1, len(HEADERS) + 1):
+        cl   = get_column_letter(ci)
+        cell = ws[f"{cl}{last_row}"]
+        b = cell.border
+        cell.border = Border(top=b.top, bottom=thick, left=b.left, right=b.right)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="machines.xlsx"'},
+    )
 
 
 @api.delete("/machines/{iid}")
@@ -1857,6 +1977,7 @@ async def create_downtime_reason(body: DowntimeReasonCreate, _=Depends(require_a
     doc = {
         "id": str(uuid.uuid4()),
         "text": body.text.strip(),
+        "specialty": body.specialty,
         "order": count,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1870,6 +1991,8 @@ async def update_downtime_reason(rid: str, body: DowntimeReasonUpdate, _=Depends
     update: dict = {}
     if body.text is not None:
         update["text"] = body.text.strip()
+    if body.specialty is not None:
+        update["specialty"] = body.specialty
     if not update:
         raise HTTPException(400, "No fields to update")
     await db.downtime_reasons.update_one({"id": rid}, {"$set": update})
@@ -2316,15 +2439,7 @@ async def startup():
         if updates:
             await db.users.update_one({"employee_number": admin_emp}, {"$set": updates})
 
-    for emp, name, pw, sp in DEFAULT_TECHS:
-        e = await db.users.find_one({"employee_number": emp})
-        if not e:
-            await db.users.insert_one({"id": str(uuid.uuid4()), "employee_number": emp, "name": name,
-                                       "role": "technician", "specialty": sp,
-                                       "password_hash": hash_password(pw),
-                                       "created_at": datetime.now(timezone.utc).isoformat()})
-        elif not e.get("specialty"):
-            await db.users.update_one({"employee_number": emp}, {"$set": {"specialty": sp}})
+    # Demo technician accounts removed — use admin panel to create users
 
     if await db.questions.count_documents({}) == 0:
         for cat, lines in DEFAULT_QUESTIONS.items():
@@ -2364,20 +2479,21 @@ async def startup():
     # Seed default downtime reasons if none exist
     if await db.downtime_reasons.count_documents({}) == 0:
         default_reasons = [
-            "Hydraulic Failure",
-            "Electrical Fault",
-            "Mechanical Breakdown",
-            "Heating / Temperature Issue",
-            "Water / Oil Leakage",
-            "Abnormal Noise or Vibration",
-            "Machine Not Starting",
-            "Sensor / Control Error",
-            "Mold / Clamp Issue",
+            {"text": "Hydraulic Failure",              "specialty": "mechanical"},
+            {"text": "Electrical Fault",               "specialty": "electrical"},
+            {"text": "Mechanical Breakdown",           "specialty": "mechanical"},
+            {"text": "Heating / Temperature Issue",    "specialty": None},
+            {"text": "Water / Oil Leakage",            "specialty": "mechanical"},
+            {"text": "Abnormal Noise or Vibration",    "specialty": "mechanical"},
+            {"text": "Machine Not Starting",           "specialty": "electrical"},
+            {"text": "Sensor / Control Error",         "specialty": "electrical"},
+            {"text": "Mold / Clamp Issue",             "specialty": "mechanical"},
         ]
         now_iso = datetime.now(timezone.utc).isoformat()
         await db.downtime_reasons.insert_many([
-            {"id": str(uuid.uuid4()), "text": t, "order": i, "created_at": now_iso}
-            for i, t in enumerate(default_reasons)
+            {"id": str(uuid.uuid4()), "text": r["text"], "specialty": r["specialty"],
+             "order": i, "created_at": now_iso}
+            for i, r in enumerate(default_reasons)
         ])
         logger.info("Seeded 9 default downtime reasons")
 

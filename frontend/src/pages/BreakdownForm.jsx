@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, formatApiError } from "../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../lib/i18n";
+import { useAuth } from "../context/AuthContext";
 import { ArrowLeft, ArrowRight, CheckCircle, Timer } from "@phosphor-icons/react";
 
 function parseTime12h(str) {
@@ -64,6 +65,7 @@ function TimePicker({ label, onChange }) {
 
 export default function BreakdownForm({ onBack, onSubmitted }) {
   const { t, lang } = useI18n();
+  const { user } = useAuth();
   const ar = lang === "ar";
   const Arrow = ar ? ArrowLeft : ArrowRight;
 
@@ -86,6 +88,10 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
       })
       .catch((e) => toast.error(formatApiError(e)));
   }, []);
+
+  const filteredReasons = reasons.filter(
+    (r) => !r.specialty || r.specialty === user?.specialty
+  );
 
   const isOther = problem === t("other_problem");
   const brief = isOther ? otherDesc.trim() : problem;
@@ -169,7 +175,7 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
             <select value={problem} onChange={(e) => setProblem(e.target.value)}
                     className="w-full h-11 px-3 border border-slate-200 bg-white text-sm">
               <option value="">{t("select_problem")}</option>
-              {reasons.map((r) => <option key={r.id} value={r.text}>{r.text}</option>)}
+              {filteredReasons.map((r) => <option key={r.id} value={r.text}>{r.text}</option>)}
               <option value={t("other_problem")}>{t("other_problem")}</option>
             </select>
             {isOther && (

@@ -65,13 +65,13 @@ function SidebarItem({ item, active, setActive, badge }) {
     <button
       onClick={() => setActive(item.key)}
       data-testid={`admin-tab-${item.key}`}
-      className={`w-full flex items-center gap-3 px-4 py-3 text-[13px] font-semibold transition-all rounded-sm ${
+      className={`w-full flex items-center gap-3 px-4 py-3 text-[15px] font-semibold transition-all rounded-sm ${
         isActive
           ? "bg-slate-900 text-white"
           : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
       }`}
     >
-      <Icon size={17} weight={isActive ? "bold" : "regular"} className="shrink-0" />
+      <Icon size={18} weight={isActive ? "bold" : "regular"} className="shrink-0" />
       <span className="flex-1 text-start leading-tight">{t(item.label_key)}</span>
       {badge > 0 && (
         <span className="h-5 min-w-[20px] px-1 bg-red-500 text-white text-xs font-bold flex items-center justify-center rounded-full">

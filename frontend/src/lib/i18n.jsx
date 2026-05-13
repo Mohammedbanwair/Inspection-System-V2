@@ -231,6 +231,11 @@ const DICT = {
     export_excel_downtime: "تصدير Excel",
     tab_preventive: "تقارير الصيانة الوقائية",
     tab_preventive_plan: "خطة الصيانة الوقائية",
+    manufacturing_year: "سنة الصنع",
+    serial_number: "الرقم التسلسلي",
+    export_excel_machines: "تصدير Excel",
+    reason_specialty: "التخصص",
+    specialty_all: "الكل",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -462,6 +467,11 @@ const DICT = {
     export_excel_downtime: "Export Excel",
     tab_preventive: "Preventive Maintenance Reports",
     tab_preventive_plan: "Preventive Maintenance Plan",
+    manufacturing_year: "Manufacturing Year",
+    serial_number: "Serial Number",
+    export_excel_machines: "Export Excel",
+    reason_specialty: "Specialty",
+    specialty_all: "All",
   },
 };
 
