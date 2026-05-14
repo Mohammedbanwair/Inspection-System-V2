@@ -6,9 +6,10 @@ import { useI18n } from "../lib/i18n";
 import TopBar from "../components/TopBar";
 import InspectionForm from "./InspectionForm";
 import BreakdownForm from "./BreakdownForm";
+import MDBReadingForm from "./MDBReadingForm";
 import {
   Gear, Wrench, Snowflake, ListChecks, ClipboardText, ArrowRight, ArrowLeft, PencilSimple,
-  CheckSquare, WarningCircle, Timer, Drop, Lightning,
+  CheckSquare, WarningCircle, Timer, Drop, Lightning, Gauge,
 } from "@phosphor-icons/react";
 
 const EDIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -86,6 +87,7 @@ export default function TechDashboard() {
   const [history, setHistory] = useState([]);
   const [editInspection, setEditInspection] = useState(null);
   const [breakdownMode, setBreakdownMode] = useState(false);
+  const [mdbMode, setMdbMode] = useState(false);
 
   const canEdit = (created_at) =>
     Date.now() - new Date(created_at).getTime() < EDIT_WINDOW_MS;
@@ -95,8 +97,8 @@ export default function TechDashboard() {
     setBranch({ category: inspection.category, target_type: inspection.target_type });
   };
 
-  const handleBack = () => { setBranch(null); setEditInspection(null); setBreakdownMode(false); };
-  const handleSubmitted = () => { setBranch(null); setEditInspection(null); setBreakdownMode(false); loadHistory(); };
+  const handleBack = () => { setBranch(null); setEditInspection(null); setBreakdownMode(false); setMdbMode(false); };
+  const handleSubmitted = () => { setBranch(null); setEditInspection(null); setBreakdownMode(false); setMdbMode(false); loadHistory(); };
 
   const loadHistory = async () => {
     try {
@@ -128,6 +130,17 @@ export default function TechDashboard() {
         <TopBar />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
           <BreakdownForm onBack={handleBack} onSubmitted={handleSubmitted} />
+        </main>
+      </div>
+    );
+  }
+
+  if (mdbMode) {
+    return (
+      <div className="min-h-screen" data-testid="tech-dashboard">
+        <TopBar />
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+          <MDBReadingForm onBack={handleBack} onSubmitted={handleSubmitted} />
         </main>
       </div>
     );
@@ -250,6 +263,22 @@ export default function TechDashboard() {
                   </div>
                   <h3 className="text-xl sm:text-2xl font-bold mt-4 sm:mt-5">{t("report_breakdown")}</h3>
                   <p className="text-sm mt-2 leading-relaxed opacity-80">{t("report_breakdown_desc")}</p>
+                </button>
+
+                {/* MDB Daily Reading card */}
+                <button
+                  onClick={() => setMdbMode(true)}
+                  className="group bg-white border border-blue-200 p-5 sm:p-7 text-start hover:bg-[#005CBE] hover:text-white transition-all duration-150"
+                  data-testid="branch-mdb"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="h-12 w-12 sm:h-14 sm:w-14 bg-[#005CBE] text-white flex items-center justify-center group-hover:bg-white group-hover:text-[#005CBE]">
+                      <Gauge size={24} weight="bold" />
+                    </div>
+                    <Arrow size={20} className="text-slate-400 group-hover:text-white" weight="bold" />
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-bold mt-4 sm:mt-5">{t("mdb_daily_reading")}</h3>
+                  <p className="text-sm mt-2 leading-relaxed opacity-80">{t("mdb_reading_desc")}</p>
                 </button>
               </div>
             )}
