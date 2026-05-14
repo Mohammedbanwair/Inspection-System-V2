@@ -17,10 +17,11 @@ import RegistrationRequests from "./admin/RegistrationRequests";
 import BreakdownAdmin from "./admin/Breakdown";
 import MDBReadings from "./admin/MDBReadings";
 import Analytics from "./admin/Analytics";
+import Permissions from "./admin/Permissions";
 import {
   ChartBar, Wrench, Question, UsersThree, ClipboardText, Snowflake, ListChecks,
   WarningOctagon, UserPlus, Drop, Clipboard, CalendarCheck, Lightning,
-  CaretDown, CaretRight, List, X, Gauge, TrendUp,
+  CaretDown, CaretRight, List, X, Gauge, TrendUp, ShieldCheck,
 } from "@phosphor-icons/react";
 
 const NAV = [
@@ -30,6 +31,7 @@ const NAV = [
   { key: "breakdown",   label_key: "tab_breakdown",   Icon: Lightning,      Component: BreakdownAdmin },
   { key: "mdb-readings", label_key: "tab_mdb_readings", Icon: Gauge,    Component: MDBReadings },
   { key: "analytics",   label_key: "tab_analytics",    Icon: TrendUp,  Component: Analytics },
+  { key: "permissions", label_key: "tab_permissions",  Icon: ShieldCheck, Component: Permissions },
   {
     group: "group_preventive",
     items: [

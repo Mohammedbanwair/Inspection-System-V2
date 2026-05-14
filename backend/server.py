@@ -2880,6 +2880,71 @@ async def export_analytics_pdf(
     )
 
 
+# ═══════════════════════════════════════════════════════════════
+# FORM PERMISSIONS
+# ═══════════════════════════════════════════════════════════════
+
+FORM_IDS = {"inspection", "breakdown", "mdb_reading"}
+
+class FormPermissionBody(BaseModel):
+    forms: dict  # {form_id: bool}
+
+@api.get("/form-permissions")
+async def list_form_permissions(_=Depends(require_admin)):
+    docs = await db.form_permissions.find({}, {"_id": 0}).to_list(500)
+    return docs
+
+@api.put("/form-permissions/specialty/{specialty}")
+async def set_specialty_permissions(specialty: str, body: FormPermissionBody, _=Depends(require_admin)):
+    if specialty not in ("electrical", "mechanical"):
+        raise HTTPException(400, "Invalid specialty")
+    forms = {k: bool(v) for k, v in body.forms.items() if k in FORM_IDS}
+    await db.form_permissions.update_one(
+        {"scope": "specialty", "target": specialty},
+        {"$set": {"scope": "specialty", "target": specialty, "forms": forms,
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+@api.put("/form-permissions/user/{user_id}")
+async def set_user_permissions(user_id: str, body: FormPermissionBody, _=Depends(require_admin)):
+    user_doc = await db.users.find_one({"id": user_id})
+    if not user_doc:
+        raise HTTPException(404, "User not found")
+    forms = {k: bool(v) for k, v in body.forms.items() if k in FORM_IDS}
+    await db.form_permissions.update_one(
+        {"scope": "user", "target": user_id},
+        {"$set": {"scope": "user", "target": user_id, "forms": forms,
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+@api.delete("/form-permissions/user/{user_id}")
+async def delete_user_permissions(user_id: str, _=Depends(require_admin)):
+    await db.form_permissions.delete_one({"scope": "user", "target": user_id})
+    return {"ok": True}
+
+@api.get("/form-permissions/me")
+async def get_my_permissions(user=Depends(get_current_user)):
+    if user["role"] == "admin":
+        return {f: True for f in FORM_IDS}
+    # User-specific override first
+    doc = await db.form_permissions.find_one({"scope": "user", "target": user["id"]})
+    if doc:
+        forms = doc.get("forms", {})
+        return {f: forms.get(f, True) for f in FORM_IDS}
+    # Specialty default
+    spec = user.get("specialty", "")
+    doc = await db.form_permissions.find_one({"scope": "specialty", "target": spec})
+    if doc:
+        forms = doc.get("forms", {})
+        return {f: forms.get(f, True) for f in FORM_IDS}
+    # All enabled by default
+    return {f: True for f in FORM_IDS}
+
+
 @api.get("/stats/overview")
 async def stats_overview(_=Depends(require_admin)):
     total_inspections = await db.inspections.count_documents({})
@@ -3169,6 +3234,7 @@ async def startup():
     await db.mdb_readings.create_index("created_at")
     await db.mdb_readings.create_index("technician_id")
     await db.mdb_readings.create_index("panel_number")
+    await db.form_permissions.create_index([("scope", 1), ("target", 1)], unique=True)
 
     # Seed default downtime reasons if none exist
     if await db.downtime_reasons.count_documents({}) == 0:
