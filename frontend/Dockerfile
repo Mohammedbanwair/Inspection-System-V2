@@ -2,7 +2,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 ENV REACT_APP_BACKEND_URL=https://www.inspet.pro
-COPY package.json ./
+COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile --network-timeout 600000
 COPY . .
 RUN yarn build
