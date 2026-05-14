@@ -88,6 +88,13 @@ export default function TechDashboard() {
   const [editInspection, setEditInspection] = useState(null);
   const [breakdownMode, setBreakdownMode] = useState(false);
   const [mdbMode, setMdbMode] = useState(false);
+  const [allowedForms, setAllowedForms] = useState(null);
+
+  useEffect(() => {
+    api.get("/form-permissions/me")
+      .then(({ data }) => setAllowedForms(data))
+      .catch(() => setAllowedForms({ inspection: true, breakdown: true, mdb_reading: true }));
+  }, []);
 
   const canEdit = (created_at) =>
     Date.now() - new Date(created_at).getTime() < EDIT_WINDOW_MS;
@@ -230,7 +237,7 @@ export default function TechDashboard() {
               </>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {branchGroups.map((grp) => {
+                {(!allowedForms || allowedForms.inspection) && branchGroups.map((grp) => {
                   const { key, title_key, desc_key, Icon } = grp;
                   return (
                     <button key={key}
@@ -249,37 +256,41 @@ export default function TechDashboard() {
                   );
                 })}
 
-                {/* Breakdown card — visible to all technicians */}
-                <button
-                  onClick={() => setBreakdownMode(true)}
-                  className="group bg-white border border-red-200 p-5 sm:p-7 text-start hover:bg-red-700 hover:text-white transition-all duration-150"
-                  data-testid="branch-breakdown"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="h-12 w-12 sm:h-14 sm:w-14 bg-red-700 text-white flex items-center justify-center group-hover:bg-white group-hover:text-red-700">
-                      <Lightning size={24} weight="bold" />
+                {/* Breakdown card */}
+                {(!allowedForms || allowedForms.breakdown) && (
+                  <button
+                    onClick={() => setBreakdownMode(true)}
+                    className="group bg-white border border-red-200 p-5 sm:p-7 text-start hover:bg-red-700 hover:text-white transition-all duration-150"
+                    data-testid="branch-breakdown"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="h-12 w-12 sm:h-14 sm:w-14 bg-red-700 text-white flex items-center justify-center group-hover:bg-white group-hover:text-red-700">
+                        <Lightning size={24} weight="bold" />
+                      </div>
+                      <Arrow size={20} className="text-slate-400 group-hover:text-white" weight="bold" />
                     </div>
-                    <Arrow size={20} className="text-slate-400 group-hover:text-white" weight="bold" />
-                  </div>
-                  <h3 className="text-xl sm:text-2xl font-bold mt-4 sm:mt-5">{t("report_breakdown")}</h3>
-                  <p className="text-sm mt-2 leading-relaxed opacity-80">{t("report_breakdown_desc")}</p>
-                </button>
+                    <h3 className="text-xl sm:text-2xl font-bold mt-4 sm:mt-5">{t("report_breakdown")}</h3>
+                    <p className="text-sm mt-2 leading-relaxed opacity-80">{t("report_breakdown_desc")}</p>
+                  </button>
+                )}
 
                 {/* MDB Daily Reading card */}
-                <button
-                  onClick={() => setMdbMode(true)}
-                  className="group bg-white border border-blue-200 p-5 sm:p-7 text-start hover:bg-[#005CBE] hover:text-white transition-all duration-150"
-                  data-testid="branch-mdb"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="h-12 w-12 sm:h-14 sm:w-14 bg-[#005CBE] text-white flex items-center justify-center group-hover:bg-white group-hover:text-[#005CBE]">
-                      <Gauge size={24} weight="bold" />
+                {(!allowedForms || allowedForms.mdb_reading) && (
+                  <button
+                    onClick={() => setMdbMode(true)}
+                    className="group bg-white border border-blue-200 p-5 sm:p-7 text-start hover:bg-[#005CBE] hover:text-white transition-all duration-150"
+                    data-testid="branch-mdb"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="h-12 w-12 sm:h-14 sm:w-14 bg-[#005CBE] text-white flex items-center justify-center group-hover:bg-white group-hover:text-[#005CBE]">
+                        <Gauge size={24} weight="bold" />
+                      </div>
+                      <Arrow size={20} className="text-slate-400 group-hover:text-white" weight="bold" />
                     </div>
-                    <Arrow size={20} className="text-slate-400 group-hover:text-white" weight="bold" />
-                  </div>
-                  <h3 className="text-xl sm:text-2xl font-bold mt-4 sm:mt-5">{t("mdb_daily_reading")}</h3>
-                  <p className="text-sm mt-2 leading-relaxed opacity-80">{t("mdb_reading_desc")}</p>
-                </button>
+                    <h3 className="text-xl sm:text-2xl font-bold mt-4 sm:mt-5">{t("mdb_daily_reading")}</h3>
+                    <p className="text-sm mt-2 leading-relaxed opacity-80">{t("mdb_reading_desc")}</p>
+                  </button>
+                )}
               </div>
             )}
 

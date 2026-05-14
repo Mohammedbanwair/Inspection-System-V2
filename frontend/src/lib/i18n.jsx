@@ -261,6 +261,7 @@ const DICT = {
     per_machine_table: "إحصائيات لكل مكينة",
     elec_label: "كهربائي",
     mech_label: "ميكانيكي",
+    tab_permissions: "الصلاحيات",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -522,6 +523,7 @@ const DICT = {
     per_machine_table: "Per Machine Statistics",
     elec_label: "Electrical",
     mech_label: "Mechanical",
+    tab_permissions: "Permissions",
   },
 };
 
