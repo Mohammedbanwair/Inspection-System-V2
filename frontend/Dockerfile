@@ -2,6 +2,8 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 ENV REACT_APP_BACKEND_URL=https://www.inspet.pro
+# Raise Node heap so webpack+recharts doesn't OOM in constrained containers
+ENV NODE_OPTIONS=--max-old-space-size=1536
 COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile --network-timeout 600000
 COPY . .
