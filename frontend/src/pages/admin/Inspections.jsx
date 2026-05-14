@@ -186,10 +186,10 @@ export default function Inspections() {
 
   return (
     <div data-testid="inspections-panel">
-      <form onSubmit={apply} className="bg-white border border-slate-200 p-5 mb-4 space-y-3">
+      <form onSubmit={apply} className="bg-white border border-slate-200 p-4 sm:p-5 mb-4 space-y-3">
 
         {/* Row 1: Steps 1–4 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
 
           {/* Step 1: Specialty */}
           <div className="flex flex-col gap-1">
@@ -261,7 +261,7 @@ export default function Inspections() {
         </div>
 
         {/* Row 2: Dates + Actions */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
           <input type="date" value={dateFrom}
                  onChange={e => setDateFrom(e.target.value)}
                  disabled={!spec}
@@ -294,7 +294,7 @@ export default function Inspections() {
       </div>
 
       <div className="bg-white border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[600px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="text-start px-4 py-3 font-semibold">{t("date")}</th>

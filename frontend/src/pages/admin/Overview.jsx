@@ -72,7 +72,7 @@ export default function Overview() {
           {t("open_failures")} ({openFails.length})
         </h3>
         <div className="bg-white border border-slate-200 overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[560px]">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="text-start px-4 py-3 font-semibold">{t("type")}</th>

@@ -126,7 +126,7 @@ export default function TechDashboard() {
     return (
       <div className="min-h-screen" data-testid="tech-dashboard">
         <TopBar />
-        <main className="max-w-7xl mx-auto p-6">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
           <BreakdownForm onBack={handleBack} onSubmitted={handleSubmitted} />
         </main>
       </div>
@@ -136,41 +136,41 @@ export default function TechDashboard() {
   return (
     <div className="min-h-screen" data-testid="tech-dashboard">
       <TopBar />
-      <main className="max-w-7xl mx-auto p-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
         {!branch ? (
           <>
-            <div className="mb-6">
+            <div className="mb-5">
               <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
                 {t("tech_panel")}
               </div>
-              <h1 className="text-3xl font-bold text-slate-900 mt-1">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-1">
                 {t("welcome")} {user?.name}
               </h1>
               <p className="text-sm text-slate-500 mt-1">{t("choose_section")}</p>
             </div>
 
             {/* Daily Summary */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              <div className="bg-white border border-slate-200 p-4 flex flex-col gap-1">
-                <div className="flex items-center gap-2 text-slate-500">
-                  <CheckSquare size={15} weight="bold" />
-                  <span className="text-xs font-semibold uppercase tracking-widest">{t("today_inspections_count")}</span>
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5 sm:mb-6">
+              <div className="bg-white border border-slate-200 p-3 sm:p-4 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-slate-500">
+                  <CheckSquare size={14} weight="bold" />
+                  <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-widest leading-tight">{t("today_inspections_count")}</span>
                 </div>
-                <div className="text-3xl font-bold text-slate-900 mt-1">{todayCount}</div>
+                <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-1">{todayCount}</div>
               </div>
-              <div className="bg-white border border-slate-200 p-4 flex flex-col gap-1">
-                <div className="flex items-center gap-2 text-slate-500">
-                  <WarningCircle size={15} weight="bold" />
-                  <span className="text-xs font-semibold uppercase tracking-widest">{t("today_fails_count")}</span>
+              <div className="bg-white border border-slate-200 p-3 sm:p-4 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-slate-500">
+                  <WarningCircle size={14} weight="bold" />
+                  <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-widest leading-tight">{t("today_fails_count")}</span>
                 </div>
-                <div className={`text-3xl font-bold mt-1 ${todayFails > 0 ? "text-red-600" : "text-slate-900"}`}>
+                <div className={`text-2xl sm:text-3xl font-bold mt-1 ${todayFails > 0 ? "text-red-600" : "text-slate-900"}`}>
                   {todayFails}
                 </div>
               </div>
-              <div className="bg-white border border-slate-200 p-4 flex flex-col gap-1">
-                <div className="flex items-center gap-2 text-slate-500">
-                  <Timer size={15} weight="bold" />
-                  <span className="text-xs font-semibold uppercase tracking-widest">{t("last_inspection_label")}</span>
+              <div className="bg-white border border-slate-200 p-3 sm:p-4 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-slate-500">
+                  <Timer size={14} weight="bold" />
+                  <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-widest leading-tight">{t("last_inspection_label")}</span>
                 </div>
                 {lastInspection ? (
                   <>
@@ -187,7 +187,7 @@ export default function TechDashboard() {
 
             {selectedGroup ? (
               <>
-                <div className="flex items-center gap-3 mb-6">
+                <div className="flex items-center gap-3 mb-5">
                   <button
                     onClick={() => setSelectedGroup(null)}
                     className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors"
@@ -198,39 +198,39 @@ export default function TechDashboard() {
                   <span className="text-slate-300">|</span>
                   <span className="text-sm font-semibold text-slate-900">{t(selectedGroup.title_key)}</span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   {selectedGroup.children.map(({ key, title_key, desc_key, Icon, category, target_type, group, panel_type }) => (
                     <button key={key} onClick={() => setBranch({ category, target_type, group, panel_type })}
-                            className="group bg-white border border-slate-200 p-7 text-start hover:bg-slate-900 hover:text-white transition-all duration-150"
+                            className="group bg-white border border-slate-200 p-5 sm:p-7 text-start hover:bg-slate-900 hover:text-white transition-all duration-150"
                             data-testid={`branch-${key}`}>
                       <div className="flex items-start justify-between">
-                        <div className="h-14 w-14 bg-slate-900 text-white flex items-center justify-center group-hover:bg-white group-hover:text-slate-900">
-                          <Icon size={28} weight="bold" />
+                        <div className="h-12 w-12 sm:h-14 sm:w-14 bg-slate-900 text-white flex items-center justify-center group-hover:bg-white group-hover:text-slate-900">
+                          <Icon size={24} weight="bold" />
                         </div>
-                        <Arrow size={22} className="text-slate-400 group-hover:text-white" weight="bold" />
+                        <Arrow size={20} className="text-slate-400 group-hover:text-white" weight="bold" />
                       </div>
-                      <h3 className="text-2xl font-bold mt-5">{t(title_key)}</h3>
+                      <h3 className="text-xl sm:text-2xl font-bold mt-4 sm:mt-5">{t(title_key)}</h3>
                       <p className="text-sm mt-2 leading-relaxed opacity-80">{t(desc_key)}</p>
                     </button>
                   ))}
                 </div>
               </>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {branchGroups.map((grp) => {
                   const { key, title_key, desc_key, Icon } = grp;
                   return (
                     <button key={key}
                             onClick={() => grp.children ? setSelectedGroup(grp) : setBranch(grp.branch)}
-                            className="group bg-white border border-slate-200 p-7 text-start hover:bg-slate-900 hover:text-white transition-all duration-150"
+                            className="group bg-white border border-slate-200 p-5 sm:p-7 text-start hover:bg-slate-900 hover:text-white transition-all duration-150"
                             data-testid={`branch-${key}`}>
                       <div className="flex items-start justify-between">
-                        <div className="h-14 w-14 bg-slate-900 text-white flex items-center justify-center group-hover:bg-white group-hover:text-slate-900">
-                          <Icon size={28} weight="bold" />
+                        <div className="h-12 w-12 sm:h-14 sm:w-14 bg-slate-900 text-white flex items-center justify-center group-hover:bg-white group-hover:text-slate-900">
+                          <Icon size={24} weight="bold" />
                         </div>
-                        <Arrow size={22} className="text-slate-400 group-hover:text-white" weight="bold" />
+                        <Arrow size={20} className="text-slate-400 group-hover:text-white" weight="bold" />
                       </div>
-                      <h3 className="text-2xl font-bold mt-5">{t(title_key)}</h3>
+                      <h3 className="text-xl sm:text-2xl font-bold mt-4 sm:mt-5">{t(title_key)}</h3>
                       <p className="text-sm mt-2 leading-relaxed opacity-80">{t(desc_key)}</p>
                     </button>
                   );
@@ -239,27 +239,27 @@ export default function TechDashboard() {
                 {/* Breakdown card — visible to all technicians */}
                 <button
                   onClick={() => setBreakdownMode(true)}
-                  className="group bg-white border border-red-200 p-7 text-start hover:bg-red-700 hover:text-white transition-all duration-150"
+                  className="group bg-white border border-red-200 p-5 sm:p-7 text-start hover:bg-red-700 hover:text-white transition-all duration-150"
                   data-testid="branch-breakdown"
                 >
                   <div className="flex items-start justify-between">
-                    <div className="h-14 w-14 bg-red-700 text-white flex items-center justify-center group-hover:bg-white group-hover:text-red-700">
-                      <Lightning size={28} weight="bold" />
+                    <div className="h-12 w-12 sm:h-14 sm:w-14 bg-red-700 text-white flex items-center justify-center group-hover:bg-white group-hover:text-red-700">
+                      <Lightning size={24} weight="bold" />
                     </div>
-                    <Arrow size={22} className="text-slate-400 group-hover:text-white" weight="bold" />
+                    <Arrow size={20} className="text-slate-400 group-hover:text-white" weight="bold" />
                   </div>
-                  <h3 className="text-2xl font-bold mt-5">{t("report_breakdown")}</h3>
+                  <h3 className="text-xl sm:text-2xl font-bold mt-4 sm:mt-5">{t("report_breakdown")}</h3>
                   <p className="text-sm mt-2 leading-relaxed opacity-80">{t("report_breakdown_desc")}</p>
                 </button>
               </div>
             )}
 
-            <div className="mt-10">
-              <h3 className="text-xl font-bold text-slate-900 mb-3 flex items-center gap-2">
+            <div className="mt-8 sm:mt-10">
+              <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-3 flex items-center gap-2">
                 <ClipboardText size={20} /> {t("recent_inspections")}
               </h3>
               <div className="bg-white border border-slate-200 overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm min-w-[480px]">
                   <thead className="bg-slate-50 text-slate-600">
                     <tr>
                       <th className="text-start px-4 py-3 font-semibold">{t("date")}</th>
@@ -287,7 +287,7 @@ export default function TechDashboard() {
                       const editable = canEdit(h.created_at);
                       return (
                         <tr key={h.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 whitespace-nowrap">
                             {new Date(h.created_at).toLocaleString(lang === "ar" ? "ar-EG" : "en-US", {
                               year: "numeric", month: "numeric", day: "numeric",
                               hour: "numeric", hour12: true,

@@ -140,7 +140,7 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
   return (
     <div className="max-w-2xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-5">
         <button onClick={onBack}
                 className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
           <Arrow size={18} weight="bold" />
@@ -150,9 +150,9 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
         <span className="text-sm font-semibold text-slate-900">{t("breakdown_report")}</span>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-4">
         {/* Machine + Reason */}
-        <div className="bg-white border border-slate-200 p-5 space-y-4">
+        <div className="bg-white border border-slate-200 p-4 sm:p-5 space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
               {ar ? "المكينة" : "Machine"}
@@ -204,8 +204,8 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
         </div>
 
         {/* Times + duration preview */}
-        <div className="bg-white border border-slate-200 p-5">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white border border-slate-200 p-4 sm:p-5">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <TimePicker label={t("start_time")} onChange={setStartTime} />
             <TimePicker label={t("end_time")} onChange={setEndTime} />
           </div>

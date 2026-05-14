@@ -157,7 +157,7 @@ export default function Questions() {
       )}
 
       <div className="bg-white border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[480px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="text-start px-4 py-3 font-semibold">{t("section")}</th>
