@@ -236,6 +236,11 @@ const DICT = {
     export_excel_machines: "تصدير Excel",
     reason_specialty: "التخصص",
     specialty_all: "الكل",
+    tab_mdb_readings: "قراءات MDB اليومية",
+    mdb_daily_reading: "قراءة MDB اليومية",
+    mdb_reading_desc: "سجّل قراءات التيار اليومية للوحات MDB",
+    mdb_panel_number: "رقم اللوحة",
+    mdb_new_reading: "قراءة جديدة",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -472,6 +477,11 @@ const DICT = {
     export_excel_machines: "Export Excel",
     reason_specialty: "Specialty",
     specialty_all: "All",
+    tab_mdb_readings: "MDB Daily Readings",
+    mdb_daily_reading: "MDB Daily Reading",
+    mdb_reading_desc: "Record daily current readings from MDB panels",
+    mdb_panel_number: "Panel Number",
+    mdb_new_reading: "New Reading",
   },
 };
 

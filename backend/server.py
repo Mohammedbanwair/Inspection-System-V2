@@ -2,6 +2,9 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
+UPLOADS_DIR = ROOT_DIR / "uploads"
+MDB_UPLOADS_DIR = UPLOADS_DIR / "mdb"
+MDB_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 load_dotenv(ROOT_DIR / '.env')
 
 import os
@@ -17,8 +20,9 @@ from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -49,6 +53,8 @@ JWT_ALGO = "HS256"
 ACCESS_TOKEN_MIN = int(os.environ.get("ACCESS_TOKEN_MINUTES", 60 * 24))
 
 app = FastAPI()
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 api = APIRouter(prefix="/api")
 
 # --- Rate limiting (in-memory, per IP) ---
@@ -2191,6 +2197,316 @@ async def export_breakdowns_excel(
     )
 
 
+
+# ═══════════════════════════════════════════════════════════════
+# MDB DAILY READINGS
+# ═══════════════════════════════════════════════════════════════
+
+@api.post("/mdb-readings")
+async def create_mdb_reading(
+    panel_number: str = Form(...),
+    l1: float = Form(...),
+    l2: float = Form(...),
+    l3: float = Form(...),
+    neutral: float = Form(...),
+    notes: str = Form(""),
+    image: Optional[UploadFile] = File(None),
+    user: dict = Depends(get_current_user),
+):
+    image_url = None
+    if image and image.filename:
+        if not (image.content_type or "").startswith("image/"):
+            raise HTTPException(400, "Only image files are allowed")
+        contents = await image.read()
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(400, "Image too large (max 5MB)")
+        ext = Path(image.filename).suffix.lower() or ".jpg"
+        fname = f"{uuid.uuid4()}{ext}"
+        fpath = MDB_UPLOADS_DIR / fname
+        with open(fpath, "wb") as f:
+            f.write(contents)
+        image_url = f"/uploads/mdb/{fname}"
+    doc = {
+        "id": str(uuid.uuid4()),
+        "panel_number": panel_number.upper().strip(),
+        "l1": l1, "l2": l2, "l3": l3, "neutral": neutral,
+        "notes": notes or "",
+        "image_url": image_url,
+        "technician_id": user["id"],
+        "technician_name": user["name"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.mdb_readings.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.get("/mdb-readings/export/excel")
+async def export_mdb_excel(
+    panel_number: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    q: dict = {}
+    if panel_number:
+        q["panel_number"] = {"$regex": re.escape(panel_number), "$options": "i"}
+    if date_from or date_to:
+        rng: dict = {}
+        if date_from: rng["$gte"] = date_from
+        if date_to:   rng["$lte"] = date_to + "T23:59:59"
+        q["created_at"] = rng
+    docs = await db.mdb_readings.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+
+    PURPLE       = "6B2D6B"
+    PURPLE_LIGHT = "F3E8F3"
+    WHITE        = "FFFFFF"
+    HEADER_BG    = "4A1442"
+    thin  = Side(style="thin",   color="CCCCCC")
+    thick = Side(style="medium", color=PURPLE)
+
+    HEADERS    = ["#", "Date", "Time", "Panel", "L1 (A)", "L2 (A)", "L3 (A)", "Neutral (A)", "Technician", "Notes"]
+    COL_WIDTHS = [5,   14,     11,     14,      12,       12,       12,       14,             22,            30]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "MDB Readings"
+    ws.sheet_view.showGridLines = False
+    for i, w in enumerate(COL_WIDTHS, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    last_col = get_column_letter(len(HEADERS))
+
+    ws.row_dimensions[1].height = 8
+    for c in range(1, len(HEADERS) + 1):
+        ws.cell(row=1, column=c).fill = PatternFill("solid", fgColor=WHITE)
+
+    ws.row_dimensions[2].height = 80
+    ws.merge_cells(f"A2:{last_col}2")
+    ws["A2"].fill = PatternFill("solid", fgColor=WHITE)
+    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
+    if os.path.exists(LOGO_PATH):
+        img = XLImage(LOGO_PATH)
+        img.width  = sum(COL_WIDTHS) * 7
+        img.height = 82
+        img.anchor = "A2"
+        ws.add_image(img)
+
+    ws.row_dimensions[3].height = 38
+    ws.merge_cells(f"A3:{last_col}3")
+    tc = ws["A3"]
+    tc.value = "MDB Daily Reading Report"
+    tc.font  = Font(name="Arial", bold=True, size=16, color=PURPLE)
+    tc.fill  = PatternFill("solid", fgColor=WHITE)
+    tc.alignment = Alignment(horizontal="center", vertical="center")
+    tc.border = Border(bottom=Side(style="medium", color=PURPLE))
+
+    ws.row_dimensions[4].height = 28
+    ws.merge_cells(f"A4:{last_col}4")
+    period = ""
+    if date_from and date_to: period = f"   |   Period: {date_from}  to  {date_to}"
+    elif date_from:            period = f"   |   From: {date_from}"
+    ic = ws["A4"]
+    ic.value = f"   Total Records: {len(docs)}{period}"
+    ic.font  = Font(name="Arial", bold=True, size=12, color=WHITE)
+    ic.fill  = PatternFill("solid", fgColor=HEADER_BG)
+    ic.alignment = Alignment(horizontal="left", vertical="center")
+
+    ws.row_dimensions[5].height = 30
+    for ci, hdr in enumerate(HEADERS, 1):
+        cl   = get_column_letter(ci)
+        cell = ws[f"{cl}5"]
+        cell.value = hdr
+        cell.font  = Font(name="Arial", bold=True, size=11, color=WHITE)
+        cell.fill  = PatternFill("solid", fgColor=HEADER_BG)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = Border(
+            top=thick, bottom=thick,
+            left=thick if ci == 1 else thin,
+            right=thick if ci == len(HEADERS) else thin,
+        )
+
+    for ri, doc in enumerate(docs):
+        row = 6 + ri
+        ws.row_dimensions[row].height = 22
+        bg = PURPLE_LIGHT if ri % 2 == 0 else WHITE
+        dt = doc.get("created_at", "")
+        values = [
+            ri + 1, dt[:10], dt[11:16] if len(dt) > 10 else "",
+            doc.get("panel_number", ""),
+            doc.get("l1", ""), doc.get("l2", ""), doc.get("l3", ""), doc.get("neutral", ""),
+            doc.get("technician_name", ""),
+            doc.get("notes", "") or "",
+        ]
+        for ci, val in enumerate(values, 1):
+            cl   = get_column_letter(ci)
+            cell = ws[f"{cl}{row}"]
+            cell.value = val
+            cell.font  = Font(name="Arial", size=10)
+            cell.fill  = PatternFill("solid", fgColor=bg)
+            cell.alignment = Alignment(
+                horizontal="center" if ci <= 8 else "left",
+                vertical="center",
+            )
+            cell.border = Border(
+                top=thin, bottom=thin,
+                left=thick if ci == 1 else thin,
+                right=thick if ci == len(HEADERS) else thin,
+            )
+            if ci in (5, 6, 7, 8) and isinstance(val, (int, float)):
+                cell.font = Font(name="Arial", bold=True, size=10, color=PURPLE)
+
+    last_row = 5 + max(len(docs), 1)
+    for ci in range(1, len(HEADERS) + 1):
+        cl   = get_column_letter(ci)
+        cell = ws[f"{cl}{last_row}"]
+        cell.border = Border(
+            top=cell.border.top, bottom=thick,
+            left=thick if ci == 1 else thin,
+            right=thick if ci == len(HEADERS) else thin,
+        )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"mdb_readings_{date_from or 'all'}_{date_to or 'all'}.xlsx"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@api.get("/mdb-readings/export/pdf")
+async def export_mdb_pdf(
+    panel_number: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    q: dict = {}
+    if panel_number:
+        q["panel_number"] = {"$regex": re.escape(panel_number), "$options": "i"}
+    if date_from or date_to:
+        rng: dict = {}
+        if date_from: rng["$gte"] = date_from
+        if date_to:   rng["$lte"] = date_to + "T23:59:59"
+        q["created_at"] = rng
+    docs = await db.mdb_readings.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.pagesizes import landscape
+    from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
+                                    Paragraph, Spacer, Image as RLImage)
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    buf = io.BytesIO()
+    pdfdoc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=1.5*cm, rightMargin=1.5*cm,
+        topMargin=1.5*cm, bottomMargin=1.5*cm,
+    )
+    PURPLE_C = rl_colors.Color(0x6B/255, 0x2D/255, 0x6B/255)
+    HEADER_C = rl_colors.Color(0x4A/255, 0x14/255, 0x42/255)
+    LIGHT_C  = rl_colors.Color(0xF3/255, 0xE8/255, 0xF3/255)
+
+    styles = getSampleStyleSheet()
+    title_st = ParagraphStyle("t", parent=styles["Heading1"],
+                               textColor=PURPLE_C, fontSize=15, spaceAfter=4)
+    sub_st   = ParagraphStyle("s", parent=styles["Normal"],
+                               textColor=rl_colors.grey, fontSize=9, spaceAfter=10)
+    elements = []
+
+    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
+    if os.path.exists(LOGO_PATH):
+        elements.append(RLImage(LOGO_PATH, width=6*cm, height=2*cm))
+        elements.append(Spacer(1, 0.3*cm))
+
+    elements.append(Paragraph("MDB Daily Reading Report", title_st))
+    period_str = ""
+    if date_from and date_to: period_str = f" | Period: {date_from} to {date_to}"
+    elif date_from:            period_str = f" | From: {date_from}"
+    elements.append(Paragraph(f"Total Records: {len(docs)}{period_str}", sub_st))
+
+    hdrs = ["#", "Date", "Time", "Panel", "L1 (A)", "L2 (A)", "L3 (A)", "N (A)", "Technician", "Notes"]
+    table_data = [hdrs]
+    for i, d in enumerate(docs, 1):
+        dt = d.get("created_at", "")
+        table_data.append([
+            str(i), dt[:10], dt[11:16] if len(dt) > 10 else "",
+            d.get("panel_number", ""),
+            str(d.get("l1", "")), str(d.get("l2", "")),
+            str(d.get("l3", "")), str(d.get("neutral", "")),
+            d.get("technician_name", ""),
+            d.get("notes", "") or "",
+        ])
+
+    col_w = [1*cm, 2.5*cm, 2*cm, 2.5*cm, 2.2*cm, 2.2*cm, 2.2*cm, 2.2*cm, 4*cm, 5*cm]
+    tbl = Table(table_data, colWidths=col_w, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  HEADER_C),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  rl_colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, 0),  9),
+        ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE",      (0, 1), (-1, -1), 8),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN",         (9, 1), (9, -1),  "LEFT"),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [rl_colors.white, LIGHT_C]),
+        ("GRID",          (0, 0), (-1, -1), 0.5, rl_colors.Color(0xCC/255, 0xCC/255, 0xCC/255)),
+        ("BOX",           (0, 0), (-1, -1), 1.5, PURPLE_C),
+        ("FONTNAME",      (4, 1), (7, -1),  "Helvetica-Bold"),
+        ("TEXTCOLOR",     (4, 1), (7, -1),  PURPLE_C),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(tbl)
+    pdfdoc.build(elements)
+
+    buf.seek(0)
+    fname = f"mdb_readings_{date_from or 'all'}_{date_to or 'all'}.pdf"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@api.get("/mdb-readings")
+async def list_mdb_readings(
+    panel_number: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    q: dict = {}
+    if panel_number:
+        q["panel_number"] = {"$regex": re.escape(panel_number), "$options": "i"}
+    if date_from or date_to:
+        rng: dict = {}
+        if date_from: rng["$gte"] = date_from
+        if date_to:   rng["$lte"] = date_to + "T23:59:59"
+        q["created_at"] = rng
+    docs = await db.mdb_readings.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+
+@api.delete("/mdb-readings/{rid}")
+async def delete_mdb_reading(rid: str, _=Depends(require_admin)):
+    doc = await db.mdb_readings.find_one({"id": rid})
+    if not doc:
+        raise HTTPException(404, "Not found")
+    if doc.get("image_url"):
+        try:
+            fpath = ROOT_DIR / doc["image_url"].lstrip("/")
+            if fpath.exists():
+                fpath.unlink()
+        except Exception:
+            pass
+    await db.mdb_readings.delete_one({"id": rid})
+    return {"ok": True}
+
+
 @api.get("/stats/overview")
 async def stats_overview(_=Depends(require_admin)):
     total_inspections = await db.inspections.count_documents({})
@@ -2475,6 +2791,11 @@ async def startup():
 
     await db.downtime_reasons.create_index("id", unique=True)
     await db.downtime_reasons.create_index("order")
+
+    await db.mdb_readings.create_index("id", unique=True)
+    await db.mdb_readings.create_index("created_at")
+    await db.mdb_readings.create_index("technician_id")
+    await db.mdb_readings.create_index("panel_number")
 
     # Seed default downtime reasons if none exist
     if await db.downtime_reasons.count_documents({}) == 0:
