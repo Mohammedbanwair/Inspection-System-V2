@@ -18,7 +18,7 @@ import BreakdownAdmin from "./admin/Breakdown";
 import {
   ChartBar, Wrench, Question, UsersThree, ClipboardText, Snowflake, ListChecks,
   WarningOctagon, UserPlus, Drop, Clipboard, CalendarCheck, Lightning,
-  CaretDown, CaretRight,
+  CaretDown, CaretRight, List, X,
 } from "@phosphor-icons/react";
 
 const NAV = [
@@ -42,7 +42,6 @@ const NAV = [
       { key: "panels",         label_key: "tab_panels",         Icon: ListChecks, Component: Panels },
     ],
   },
-  // Note: Chillers & Cooling Towers are adjacent (both mechanical cooling equipment)
   {
     group: "group_setup",
     items: [
@@ -57,13 +56,13 @@ function flatItems() {
   return NAV.flatMap((n) => n.group ? n.items : [n]);
 }
 
-function SidebarItem({ item, active, setActive, badge }) {
+function SidebarItem({ item, active, setActive, badge, onClose }) {
   const { t } = useI18n();
   const isActive = active === item.key;
   const { Icon } = item;
   return (
     <button
-      onClick={() => setActive(item.key)}
+      onClick={() => { setActive(item.key); onClose?.(); }}
       data-testid={`admin-tab-${item.key}`}
       className={`w-full flex items-center gap-3 px-4 py-3 text-[15px] font-semibold transition-all rounded-sm ${
         isActive
@@ -82,7 +81,7 @@ function SidebarItem({ item, active, setActive, badge }) {
   );
 }
 
-function SidebarGroup({ entry, active, setActive, openGroups, toggleGroup, pendingCount }) {
+function SidebarGroup({ entry, active, setActive, openGroups, toggleGroup, pendingCount, onClose }) {
   const { t } = useI18n();
   const isOpen = openGroups[entry.group];
   const Caret = isOpen ? CaretDown : CaretRight;
@@ -104,6 +103,7 @@ function SidebarGroup({ entry, active, setActive, openGroups, toggleGroup, pendi
               active={active}
               setActive={setActive}
               badge={item.key === "requests" ? pendingCount : 0}
+              onClose={onClose}
             />
           ))}
         </div>
@@ -112,10 +112,42 @@ function SidebarGroup({ entry, active, setActive, openGroups, toggleGroup, pendi
   );
 }
 
+function SidebarNav({ active, setActive, openGroups, toggleGroup, pendingCount, onClose }) {
+  const { t } = useI18n();
+  return (
+    <nav className="space-y-0.5">
+      {NAV.map((entry) =>
+        entry.group ? (
+          <SidebarGroup
+            key={entry.group}
+            entry={entry}
+            active={active}
+            setActive={setActive}
+            openGroups={openGroups}
+            toggleGroup={toggleGroup}
+            pendingCount={pendingCount}
+            onClose={onClose}
+          />
+        ) : (
+          <SidebarItem
+            key={entry.key}
+            item={entry}
+            active={active}
+            setActive={setActive}
+            badge={0}
+            onClose={onClose}
+          />
+        )
+      )}
+    </nav>
+  );
+}
+
 export default function AdminDashboard() {
   const { t, lang } = useI18n();
   const [active, setActive] = useState("overview");
   const [pendingCount, setPendingCount] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState({
     group_preventive: true,
     group_equipment: true,
@@ -138,46 +170,81 @@ export default function AdminDashboard() {
     setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const ActiveComp = flatItems().find((i) => i.key === active)?.Component ?? Overview;
+  const activeLabel = t(flatItems().find((i) => i.key === active)?.label_key ?? "tab_overview");
 
   return (
     <div className="min-h-screen" data-testid="admin-dashboard">
       <TopBar />
-      <div className="max-w-[1400px] mx-auto px-4 py-6 flex gap-6">
-        {/* Sidebar */}
-        <aside className="w-64 flex-shrink-0">
+
+      {/* Mobile section bar */}
+      <div className="md:hidden sticky top-16 z-20 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+        <span className="text-sm font-bold text-slate-900">{activeLabel}</span>
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="h-10 w-10 border border-slate-200 flex items-center justify-center hover:bg-slate-100"
+          aria-label="Open menu"
+        >
+          <List size={20} weight="bold" />
+        </button>
+      </div>
+
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-50 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/50" />
+          <aside
+            className="absolute top-0 h-full w-72 bg-white overflow-y-auto flex flex-col shadow-2xl"
+            style={{ [lang === "ar" ? "right" : "left"]: 0 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-4 border-b border-slate-200 sticky top-0 bg-white z-10">
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                {t("admin_panel")}
+              </span>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="h-9 w-9 border border-slate-200 flex items-center justify-center hover:bg-slate-100"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex-1 p-2 overflow-y-auto">
+              <SidebarNav
+                active={active}
+                setActive={setActive}
+                openGroups={openGroups}
+                toggleGroup={toggleGroup}
+                pendingCount={pendingCount}
+                onClose={() => setSidebarOpen(false)}
+              />
+            </div>
+          </aside>
+        </div>
+      )}
+
+      <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4 sm:py-6 md:flex md:gap-6">
+        {/* Desktop sidebar — hidden on mobile */}
+        <aside className="hidden md:block w-64 flex-shrink-0">
           <div className="sticky top-4">
             <div className="text-xs font-bold uppercase tracking-widest text-slate-400 px-4 mb-3">
               {t("admin_panel")}
             </div>
-            <nav className="space-y-0.5">
-              {NAV.map((entry, idx) =>
-                entry.group ? (
-                  <SidebarGroup
-                    key={entry.group}
-                    entry={entry}
-                    active={active}
-                    setActive={setActive}
-                    openGroups={openGroups}
-                    toggleGroup={toggleGroup}
-                    pendingCount={pendingCount}
-                  />
-                ) : (
-                  <SidebarItem
-                    key={entry.key}
-                    item={entry}
-                    active={active}
-                    setActive={setActive}
-                    badge={0}
-                  />
-                )
-              )}
-            </nav>
+            <SidebarNav
+              active={active}
+              setActive={setActive}
+              openGroups={openGroups}
+              toggleGroup={toggleGroup}
+              pendingCount={pendingCount}
+            />
           </div>
         </aside>
 
         {/* Main content */}
         <main className="flex-1 min-w-0">
-          <div className="mb-5">
+          <div className="mb-4 md:mb-5 hidden md:block">
             <h1 className="text-2xl font-bold text-slate-900">{t("control_center")}</h1>
           </div>
           <div className="fade-in">

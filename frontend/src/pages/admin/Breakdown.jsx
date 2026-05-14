@@ -288,8 +288,8 @@ export default function Breakdown() {
       </div>
 
       {/* Filters */}
-      <form onSubmit={apply} className="bg-white border border-slate-200 p-5 mb-4">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <form onSubmit={apply} className="bg-white border border-slate-200 p-4 sm:p-5 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
           <select
             value={machineId}
             onChange={(e) => setMachineId(e.target.value)}
@@ -337,7 +337,7 @@ export default function Breakdown() {
       </div>
 
       <div className="bg-white border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[700px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="text-start px-4 py-3 font-semibold">{t("date")}</th>

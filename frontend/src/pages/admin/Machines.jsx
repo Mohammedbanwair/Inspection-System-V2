@@ -176,7 +176,7 @@ export default function Machines() {
         <div className="px-4 py-2 text-xs text-slate-400 flex items-center gap-1 border-b border-slate-100">
           <DotsSixVertical size={14} /> {t("drag_to_reorder")}
         </div>
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[640px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="w-10 px-4 py-3"></th>

@@ -95,17 +95,18 @@ export default function Failures() {
         <div className="space-y-4">
           {grouped.map((g) => (
             <div key={`${g.target_type}-${g.target_number}`} className="bg-white border border-slate-200">
-              <div className="bg-slate-900 text-white px-5 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="px-2 py-1 text-xs font-semibold bg-white/10">{typeLabel(g.target_type)}</span>
-                  <span className="font-bold text-lg">{g.target_number}</span>
-                  {g.target_name && <span className="text-sm text-slate-300">— {g.target_name}</span>}
+              <div className="bg-slate-900 text-white px-4 sm:px-5 py-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  <span className="px-2 py-1 text-xs font-semibold bg-white/10 shrink-0">{typeLabel(g.target_type)}</span>
+                  <span className="font-bold text-base sm:text-lg">{g.target_number}</span>
+                  {g.target_name && <span className="text-sm text-slate-300 truncate">— {g.target_name}</span>}
                 </div>
-                <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold">
+                <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold shrink-0">
                   {g.items.length} {t("fails_label")}
                 </span>
               </div>
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[400px]">
                 <tbody>
                   {g.items.map((f, i) => (
                     <tr key={`${f.question_id}-${i}`} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
@@ -124,6 +125,7 @@ export default function Failures() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           ))}
         </div>
