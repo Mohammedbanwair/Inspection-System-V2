@@ -16,10 +16,11 @@ import PreventivePlan from "./admin/PreventivePlan";
 import RegistrationRequests from "./admin/RegistrationRequests";
 import BreakdownAdmin from "./admin/Breakdown";
 import MDBReadings from "./admin/MDBReadings";
+import Analytics from "./admin/Analytics";
 import {
   ChartBar, Wrench, Question, UsersThree, ClipboardText, Snowflake, ListChecks,
   WarningOctagon, UserPlus, Drop, Clipboard, CalendarCheck, Lightning,
-  CaretDown, CaretRight, List, X, Gauge,
+  CaretDown, CaretRight, List, X, Gauge, TrendUp,
 } from "@phosphor-icons/react";
 
 const NAV = [
@@ -27,7 +28,8 @@ const NAV = [
   { key: "failures",    label_key: "tab_failures",    Icon: WarningOctagon, Component: Failures },
   { key: "inspections", label_key: "tab_inspections", Icon: ClipboardText,  Component: Inspections },
   { key: "breakdown",   label_key: "tab_breakdown",   Icon: Lightning,      Component: BreakdownAdmin },
-  { key: "mdb-readings", label_key: "tab_mdb_readings", Icon: Gauge, Component: MDBReadings },
+  { key: "mdb-readings", label_key: "tab_mdb_readings", Icon: Gauge,    Component: MDBReadings },
+  { key: "analytics",   label_key: "tab_analytics",    Icon: TrendUp,  Component: Analytics },
   {
     group: "group_preventive",
     items: [

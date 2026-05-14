@@ -2507,6 +2507,379 @@ async def delete_mdb_reading(rid: str, _=Depends(require_admin)):
     return {"ok": True}
 
 
+
+# ═══════════════════════════════════════════════════════════════
+# MAINTENANCE ANALYTICS
+# ═══════════════════════════════════════════════════════════════
+
+def _calc_duration_minutes(start_str: str, end_str: str) -> int:
+    """Return duration in minutes between two 12-hour time strings, or 0."""
+    import re as _re
+    def _p(s):
+        if not s: return None
+        m = _re.match(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$', s.strip(), _re.IGNORECASE)
+        if not m: return None
+        h, mn, ap = int(m.group(1)), int(m.group(2)), m.group(3).upper()
+        if ap == 'PM' and h != 12: h += 12
+        if ap == 'AM' and h == 12: h = 0
+        return h * 60 + mn
+    s, e = _p(start_str), _p(end_str)
+    if s is None or e is None: return 0
+    diff = e - s
+    if diff < 0: diff += 1440
+    return diff
+
+
+@api.get("/analytics/maintenance")
+async def get_maintenance_analytics(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    machine_id: Optional[str] = None,
+    specialty: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    now = datetime.now(timezone.utc)
+    eff_year = year or now.year
+
+    # Build query for the filtered period
+    q: dict = {}
+    if year and month:
+        nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
+        q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
+    elif year:
+        q["created_at"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
+    if machine_id:
+        q["machine_id"] = machine_id
+
+    all_docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
+
+    # Resolve technician specialties
+    tech_ids = list({d["technician_id"] for d in all_docs if d.get("technician_id")})
+    users_cur = await db.users.find({"id": {"$in": tech_ids}}, {"_id": 0, "id": 1, "specialty": 1}).to_list(500)
+    tech_specialty = {u["id"]: u.get("specialty") for u in users_cur}
+
+    if specialty:
+        all_docs = [d for d in all_docs if tech_specialty.get(d.get("technician_id", "")) == specialty]
+
+    for d in all_docs:
+        d["_minutes"] = _calc_duration_minutes(d.get("start_time", ""), d.get("end_time", ""))
+
+    total_breakdowns = len(all_docs)
+    total_minutes = sum(d["_minutes"] for d in all_docs)
+    has_dur = [d for d in all_docs if d["_minutes"] > 0]
+    mttr_min = (sum(d["_minutes"] for d in has_dur) / len(has_dur)) if has_dur else 0
+
+    # MTBF estimate
+    if total_breakdowns > 1:
+        try:
+            dt1 = datetime.fromisoformat(all_docs[0]["created_at"].replace("Z", "+00:00"))
+            dt2 = datetime.fromisoformat(all_docs[-1]["created_at"].replace("Z", "+00:00"))
+            period_h = max((dt2 - dt1).total_seconds() / 3600, 1.0)
+        except Exception:
+            period_h = 720.0
+        mtbf_h = (period_h - total_minutes / 60) / total_breakdowns
+    else:
+        mtbf_h = 0.0
+
+    elec_docs = [d for d in all_docs if tech_specialty.get(d.get("technician_id", "")) == "electrical"]
+    mech_docs = [d for d in all_docs if tech_specialty.get(d.get("technician_id", "")) == "mechanical"]
+
+    machine_stats: dict = defaultdict(lambda: {"count": 0, "minutes": 0, "name": ""})
+    reason_counts: dict = defaultdict(int)
+    for d in all_docs:
+        key = d.get("machine_number", "Unknown")
+        machine_stats[key]["count"] += 1
+        machine_stats[key]["minutes"] += d["_minutes"]
+        machine_stats[key]["name"] = d.get("machine_name", "")
+        reason_counts[d.get("brief_description", "Other")] += 1
+
+    most_failed = max(machine_stats, key=lambda k: machine_stats[k]["count"]) if machine_stats else "—"
+
+    by_machine = sorted(
+        [{"machine": k, "name": v["name"], "count": v["count"],
+          "downtime_hours": round(v["minutes"] / 60, 1)}
+         for k, v in machine_stats.items()],
+        key=lambda x: x["count"], reverse=True,
+    )[:10]
+
+    top_reasons = sorted(
+        [{"reason": k, "count": v} for k, v in reason_counts.items()],
+        key=lambda x: x["count"], reverse=True,
+    )[:8]
+
+    # Monthly trend — last 12 months
+    MNAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    trend = []
+    for i in range(11, -1, -1):
+        mo = now.month - i
+        yr = now.year
+        while mo <= 0:
+            mo += 12
+            yr -= 1
+        nx_y2, nx_m2 = (yr + 1, 1) if mo == 12 else (yr, mo + 1)
+        tdocs = await db.breakdowns.find(
+            {"created_at": {"$gte": f"{yr:04d}-{mo:02d}-01", "$lt": f"{nx_y2:04d}-{nx_m2:02d}-01"}},
+            {"_id": 0, "start_time": 1, "end_time": 1},
+        ).to_list(2000)
+        trend.append({
+            "month": f"{MNAMES[mo-1]} {yr}",
+            "count": len(tdocs),
+            "downtime_hours": round(sum(_calc_duration_minutes(d.get("start_time",""), d.get("end_time","")) for d in tdocs) / 60, 1),
+        })
+
+    return {
+        "overview": {
+            "total_breakdowns": total_breakdowns,
+            "total_downtime_hours": round(total_minutes / 60, 1),
+            "mttr_minutes": round(mttr_min, 1),
+            "mtbf_hours": round(max(mtbf_h, 0), 1),
+            "electrical_count": len(elec_docs),
+            "mechanical_count": len(mech_docs),
+            "most_failed_machine": most_failed,
+        },
+        "monthly_trend": trend,
+        "by_machine": by_machine,
+        "top_reasons": top_reasons,
+        "by_specialty": {
+            "electrical": {"count": len(elec_docs), "downtime_hours": round(sum(d["_minutes"] for d in elec_docs)/60,1)},
+            "mechanical": {"count": len(mech_docs), "downtime_hours": round(sum(d["_minutes"] for d in mech_docs)/60,1)},
+        },
+    }
+
+
+@api.get("/analytics/maintenance/export/excel")
+async def export_analytics_excel(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    machine_id: Optional[str] = None,
+    specialty: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    now = datetime.now(timezone.utc)
+    eff_year = year or now.year
+    q: dict = {}
+    if year and month:
+        nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
+        q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
+    elif year:
+        q["created_at"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
+    if machine_id:
+        q["machine_id"] = machine_id
+
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    tech_ids = list({d["technician_id"] for d in docs if d.get("technician_id")})
+    users_cur = await db.users.find({"id": {"$in": tech_ids}}, {"_id": 0, "id": 1, "specialty": 1}).to_list(500)
+    tech_specialty = {u["id"]: u.get("specialty") for u in users_cur}
+    if specialty:
+        docs = [d for d in docs if tech_specialty.get(d.get("technician_id","")) == specialty]
+    for d in docs:
+        d["_specialty"] = tech_specialty.get(d.get("technician_id",""), "")
+        d["_minutes"]   = _calc_duration_minutes(d.get("start_time",""), d.get("end_time",""))
+
+    PURPLE       = "6B2D6B"
+    PURPLE_LIGHT = "F3E8F3"
+    WHITE        = "FFFFFF"
+    HEADER_BG    = "4A1442"
+    thin  = Side(style="thin",   color="CCCCCC")
+    thick = Side(style="medium", color=PURPLE)
+
+    HEADERS    = ["#", "Date", "Machine", "Specialty", "Reason", "Technician", "Start", "End", "Duration (min)", "Status"]
+    COL_WIDTHS = [5,   16,     18,        14,           32,       20,           12,      12,    16,               12]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Maintenance Analytics"
+    ws.sheet_view.showGridLines = False
+    for i, w in enumerate(COL_WIDTHS, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    last_col = get_column_letter(len(HEADERS))
+
+    ws.row_dimensions[1].height = 8
+    for c in range(1, len(HEADERS) + 1):
+        ws.cell(row=1, column=c).fill = PatternFill("solid", fgColor=WHITE)
+
+    ws.row_dimensions[2].height = 80
+    ws.merge_cells(f"A2:{last_col}2")
+    ws["A2"].fill = PatternFill("solid", fgColor=WHITE)
+    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
+    if os.path.exists(LOGO_PATH):
+        img = XLImage(LOGO_PATH)
+        img.width = sum(COL_WIDTHS) * 7
+        img.height = 82
+        img.anchor = "A2"
+        ws.add_image(img)
+
+    ws.row_dimensions[3].height = 38
+    ws.merge_cells(f"A3:{last_col}3")
+    tc = ws["A3"]
+    period_lbl = f" — {eff_year}" + (f"/{month:02d}" if month else "")
+    tc.value = f"Maintenance Analytics Report{period_lbl}"
+    tc.font  = Font(name="Arial", bold=True, size=16, color=PURPLE)
+    tc.fill  = PatternFill("solid", fgColor=WHITE)
+    tc.alignment = Alignment(horizontal="center", vertical="center")
+    tc.border = Border(bottom=Side(style="medium", color=PURPLE))
+
+    ws.row_dimensions[4].height = 28
+    ws.merge_cells(f"A4:{last_col}4")
+    ic = ws["A4"]
+    ic.value = f"   Total Records: {len(docs)}   |   Specialty: {specialty or 'All'}"
+    ic.font  = Font(name="Arial", bold=True, size=12, color=WHITE)
+    ic.fill  = PatternFill("solid", fgColor=HEADER_BG)
+    ic.alignment = Alignment(horizontal="left", vertical="center")
+
+    ws.row_dimensions[5].height = 30
+    for ci, hdr in enumerate(HEADERS, 1):
+        cell = ws[f"{get_column_letter(ci)}5"]
+        cell.value = hdr
+        cell.font  = Font(name="Arial", bold=True, size=11, color=WHITE)
+        cell.fill  = PatternFill("solid", fgColor=HEADER_BG)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = Border(top=thick, bottom=thick,
+                             left=thick if ci==1 else thin,
+                             right=thick if ci==len(HEADERS) else thin)
+
+    for ri, doc in enumerate(docs):
+        row = 6 + ri
+        ws.row_dimensions[row].height = 22
+        bg   = PURPLE_LIGHT if ri % 2 == 0 else WHITE
+        vals = [
+            ri + 1,
+            doc.get("created_at","")[:10],
+            doc.get("machine_number",""),
+            doc.get("_specialty","").capitalize() or "—",
+            doc.get("brief_description",""),
+            doc.get("technician_name",""),
+            doc.get("start_time","") or "—",
+            doc.get("end_time","")   or "—",
+            doc["_minutes"] if doc["_minutes"] > 0 else "—",
+            "Resolved" if doc.get("status") == "resolved" else "Open",
+        ]
+        for ci, val in enumerate(vals, 1):
+            cell = ws[f"{get_column_letter(ci)}{row}"]
+            cell.value = val
+            cell.font  = Font(name="Arial", size=10)
+            cell.fill  = PatternFill("solid", fgColor=bg)
+            cell.alignment = Alignment(horizontal="center" if ci in (1,9,10) else "left", vertical="center")
+            cell.border = Border(top=thin, bottom=thin,
+                                 left=thick if ci==1 else thin,
+                                 right=thick if ci==len(HEADERS) else thin)
+
+    last_row = 5 + max(len(docs), 1)
+    for ci in range(1, len(HEADERS)+1):
+        cell = ws[f"{get_column_letter(ci)}{last_row}"]
+        cell.border = Border(top=cell.border.top, bottom=thick,
+                             left=thick if ci==1 else thin,
+                             right=thick if ci==len(HEADERS) else thin)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"analytics_{eff_year}_{month or 'all'}.xlsx"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@api.get("/analytics/maintenance/export/pdf")
+async def export_analytics_pdf(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    machine_id: Optional[str] = None,
+    specialty: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    now = datetime.now(timezone.utc)
+    eff_year = year or now.year
+    q: dict = {}
+    if year and month:
+        nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
+        q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
+    elif year:
+        q["created_at"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
+    if machine_id:
+        q["machine_id"] = machine_id
+
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    tech_ids = list({d["technician_id"] for d in docs if d.get("technician_id")})
+    users_cur = await db.users.find({"id": {"$in": tech_ids}}, {"_id": 0, "id": 1, "specialty": 1}).to_list(500)
+    tech_specialty = {u["id"]: u.get("specialty") for u in users_cur}
+    if specialty:
+        docs = [d for d in docs if tech_specialty.get(d.get("technician_id","")) == specialty]
+    for d in docs:
+        d["_specialty"] = tech_specialty.get(d.get("technician_id",""), "")
+        d["_minutes"]   = _calc_duration_minutes(d.get("start_time",""), d.get("end_time",""))
+
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.pagesizes import landscape
+    from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
+                                    Paragraph, Spacer, Image as RLImage)
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    buf = io.BytesIO()
+    pdfdoc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=1.5*cm, rightMargin=1.5*cm,
+        topMargin=1.5*cm, bottomMargin=1.5*cm,
+    )
+    PURPLE_C = rl_colors.Color(0x6B/255, 0x2D/255, 0x6B/255)
+    HEADER_C = rl_colors.Color(0x4A/255, 0x14/255, 0x42/255)
+    LIGHT_C  = rl_colors.Color(0xF3/255, 0xE8/255, 0xF3/255)
+    styles = getSampleStyleSheet()
+    title_st = ParagraphStyle("t", parent=styles["Heading1"], textColor=PURPLE_C, fontSize=15, spaceAfter=4)
+    sub_st   = ParagraphStyle("s", parent=styles["Normal"], textColor=rl_colors.grey, fontSize=9, spaceAfter=10)
+    elements = []
+    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
+    if os.path.exists(LOGO_PATH):
+        elements.append(RLImage(LOGO_PATH, width=6*cm, height=2*cm))
+        elements.append(Spacer(1, 0.3*cm))
+    period_lbl = f"{eff_year}" + (f"/{month:02d}" if month else "")
+    elements.append(Paragraph(f"Maintenance Analytics Report — {period_lbl}", title_st))
+    elements.append(Paragraph(f"Total Records: {len(docs)}   |   Specialty: {specialty or 'All'}", sub_st))
+
+    hdrs = ["#", "Date", "Machine", "Specialty", "Reason", "Technician", "Duration (min)", "Status"]
+    table_data = [hdrs]
+    for i, d in enumerate(docs, 1):
+        table_data.append([
+            str(i),
+            d.get("created_at","")[:10],
+            d.get("machine_number",""),
+            (d.get("_specialty","") or "—").capitalize(),
+            d.get("brief_description",""),
+            d.get("technician_name",""),
+            str(d["_minutes"]) if d["_minutes"] > 0 else "—",
+            "Resolved" if d.get("status") == "resolved" else "Open",
+        ])
+    col_w = [1*cm, 2.5*cm, 3*cm, 2.5*cm, 6*cm, 4*cm, 3*cm, 2.5*cm]
+    tbl = Table(table_data, colWidths=col_w, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  HEADER_C),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  rl_colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, 0),  9),
+        ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE",      (0, 1), (-1, -1), 8),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN",         (4, 1), (5, -1),  "LEFT"),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [rl_colors.white, LIGHT_C]),
+        ("GRID",          (0, 0), (-1, -1), 0.5, rl_colors.Color(0xCC/255,0xCC/255,0xCC/255)),
+        ("BOX",           (0, 0), (-1, -1), 1.5, PURPLE_C),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(tbl)
+    pdfdoc.build(elements)
+    buf.seek(0)
+    fname = f"analytics_{eff_year}_{month or 'all'}.pdf"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @api.get("/stats/overview")
 async def stats_overview(_=Depends(require_admin)):
     total_inspections = await db.inspections.count_documents({})
