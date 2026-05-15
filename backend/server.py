@@ -2967,6 +2967,38 @@ async def get_my_permissions(user=Depends(get_current_user)):
     return SPECIALTY_DEFAULTS.get(spec, {f: True for f in FORM_IDS})
 
 
+@api.get("/stats/monthly-breakdown")
+async def stats_monthly_breakdown(_=Depends(require_admin)):
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    docs = await db.breakdowns.find({"created_at": {"$gte": month_start}}, {"_id": 0}).to_list(1000)
+    total = len(docs)
+    resolved = sum(1 for d in docs if d.get("status") == "resolved")
+    cause_counts: dict = defaultdict(int)
+    total_minutes = 0
+    for d in docs:
+        cause_counts[d.get("brief_description", "—")[:60]] += 1
+        try:
+            if d.get("start_time") and d.get("end_time"):
+                s = datetime.fromisoformat(d["start_time"].replace("Z", "+00:00"))
+                e = datetime.fromisoformat(d["end_time"].replace("Z", "+00:00"))
+                diff = (e - s).total_seconds() / 60
+                if 0 < diff < 10000:
+                    total_minutes += diff
+        except Exception:
+            pass
+    top_causes = sorted(
+        [{"cause": k, "count": v} for k, v in cause_counts.items()],
+        key=lambda x: -x["count"],
+    )[:5]
+    return {
+        "total": total,
+        "resolved": resolved,
+        "open": total - resolved,
+        "downtime_hours": round(total_minutes / 60, 1),
+        "top_causes": top_causes,
+    }
+
 @api.get("/stats/overview")
 async def stats_overview(_=Depends(require_admin)):
     total_inspections = await db.inspections.count_documents({})
