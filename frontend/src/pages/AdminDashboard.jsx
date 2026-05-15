@@ -31,7 +31,6 @@ const NAV = [
   { key: "breakdown",   label_key: "tab_breakdown",   Icon: Lightning,      Component: BreakdownAdmin },
   { key: "mdb-readings", label_key: "tab_mdb_readings", Icon: Gauge,    Component: MDBReadings },
   { key: "analytics",   label_key: "tab_analytics",    Icon: TrendUp,  Component: Analytics },
-  { key: "permissions", label_key: "tab_permissions",  Icon: ShieldCheck, Component: Permissions },
   {
     group: "group_preventive",
     items: [
@@ -51,9 +50,10 @@ const NAV = [
   {
     group: "group_setup",
     items: [
-      { key: "questions", label_key: "tab_questions", Icon: Question,   Component: Questions },
-      { key: "users",     label_key: "tab_users",     Icon: UsersThree, Component: Users },
-      { key: "requests",  label_key: "tab_requests",  Icon: UserPlus,   Component: RegistrationRequests },
+      { key: "questions",   label_key: "tab_questions",   Icon: Question,    Component: Questions },
+      { key: "users",       label_key: "tab_users",       Icon: UsersThree,  Component: Users },
+      { key: "requests",    label_key: "tab_requests",    Icon: UserPlus,    Component: RegistrationRequests },
+      { key: "permissions", label_key: "tab_permissions", Icon: ShieldCheck, Component: Permissions },
     ],
   },
 ];

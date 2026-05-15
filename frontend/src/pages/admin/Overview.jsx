@@ -3,8 +3,8 @@ import { api, formatApiError } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import {
-  ClipboardText, Wrench, UsersThree, Question, Warning, CalendarCheck,
-  Snowflake, ListChecks, WarningOctagon, Lightning, CheckCircle,
+  ClipboardText, Wrench, CalendarCheck,
+  Snowflake, ListChecks, WarningOctagon, Lightning,
 } from "@phosphor-icons/react";
 
 const CAT_KEY = {
@@ -62,11 +62,6 @@ export default function Overview() {
   const catLabel = (c) => t(CAT_KEY[c] || "cat_electrical");
   const typeLabel = (tt) => t(tt === "machine" ? "machine" : tt === "chiller" ? "chiller" : "panel");
 
-  // Health score: % of today's inspections with zero failures
-  const todayInspections = stats?.today_inspections ?? 0;
-  const healthPct = todayInspections === 0 ? null
-    : Math.round(((todayInspections - (stats?.today_fails ?? 0)) / todayInspections) * 100);
-
   if (loading) return (
     <div className="flex items-center justify-center py-20">
       <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
@@ -76,17 +71,13 @@ export default function Overview() {
   return (
     <div className="space-y-6" data-testid="admin-overview">
 
-      {/* KPI Cards — removed open_fails, added health */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <Stat icon={ClipboardText} label={t("total_inspections")}  value={stats?.total_inspections ?? "—"} testid="stat-total-inspections" />
-        <Stat icon={CalendarCheck} label={t("today_inspections")}  value={stats?.today_inspections ?? "—"} accent="bg-[#005CBE] text-white" testid="stat-today-inspections" />
-        <Stat icon={CheckCircle}   label={t("health_score")}
-              value={healthPct !== null ? `${healthPct}%` : "—"}
-              accent={healthPct !== null && healthPct >= 80 ? "bg-emerald-600 text-white" : healthPct !== null ? "bg-amber-500 text-white" : "bg-slate-900 text-white"}
-              testid="stat-health" />
-        <Stat icon={Wrench}        label={t("machines_label")}     value={stats?.total_machines ?? "—"} testid="stat-machines" />
-        <Stat icon={Snowflake}     label={t("chillers_label")}     value={stats?.total_chillers ?? "—"} testid="stat-chillers" />
-        <Stat icon={ListChecks}    label={t("panels_label")}       value={stats?.total_panels ?? "—"} testid="stat-panels" />
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <Stat icon={ClipboardText} label={t("total_inspections")} value={stats?.total_inspections ?? "—"} testid="stat-total-inspections" />
+        <Stat icon={CalendarCheck} label={t("today_inspections")} value={stats?.today_inspections ?? "—"} accent="bg-[#005CBE] text-white" testid="stat-today-inspections" />
+        <Stat icon={Wrench}        label={t("machines_label")}    value={stats?.total_machines ?? "—"} testid="stat-machines" />
+        <Stat icon={Snowflake}     label={t("chillers_label")}    value={stats?.total_chillers ?? "—"} testid="stat-chillers" />
+        <Stat icon={ListChecks}    label={t("panels_label")}      value={stats?.total_panels ?? "—"} testid="stat-panels" />
       </div>
 
       {/* Monthly Breakdown Indicator */}

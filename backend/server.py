@@ -2607,6 +2607,12 @@ async def get_maintenance_analytics(
         key=lambda x: x["count"], reverse=True,
     )[:8]
 
+    # Preventive maintenance count for the filtered period
+    pm_q: dict = {"category": "preventive"}
+    if q.get("created_at"):
+        pm_q["created_at"] = q["created_at"]
+    pm_total = await db.inspections.count_documents(pm_q)
+
     # Monthly trend — last 12 months
     MNAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
     trend = []
@@ -2617,14 +2623,17 @@ async def get_maintenance_analytics(
             mo += 12
             yr -= 1
         nx_y2, nx_m2 = (yr + 1, 1) if mo == 12 else (yr, mo + 1)
+        date_rng = {"$gte": f"{yr:04d}-{mo:02d}-01", "$lt": f"{nx_y2:04d}-{nx_m2:02d}-01"}
         tdocs = await db.breakdowns.find(
-            {"created_at": {"$gte": f"{yr:04d}-{mo:02d}-01", "$lt": f"{nx_y2:04d}-{nx_m2:02d}-01"}},
+            {"created_at": date_rng},
             {"_id": 0, "start_time": 1, "end_time": 1},
         ).to_list(2000)
+        pm_month = await db.inspections.count_documents({"category": "preventive", "created_at": date_rng})
         trend.append({
             "month": f"{MNAMES[mo-1]} {yr}",
             "count": len(tdocs),
             "downtime_hours": round(sum(_calc_duration_minutes(d.get("start_time",""), d.get("end_time","")) for d in tdocs) / 60, 1),
+            "pm_count": pm_month,
         })
 
     return {
@@ -2636,6 +2645,7 @@ async def get_maintenance_analytics(
             "electrical_count": len(elec_docs),
             "mechanical_count": len(mech_docs),
             "most_failed_machine": most_failed,
+            "pm_count": pm_total,
         },
         "monthly_trend": trend,
         "by_machine": by_machine,

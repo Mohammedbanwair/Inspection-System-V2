@@ -14,6 +14,7 @@ import {
 const PURPLE   = "#6B2D6B";
 const ELEC_CLR = "#3B82F6";
 const MECH_CLR = "#F97316";
+const PM_CLR   = "#10B981";
 const BAR_CLRS = ["#6B2D6B","#9B4F9B","#C084C0","#3B82F6","#F97316","#10B981","#EF4444","#F59E0B","#8B5CF6","#06B6D4"];
 
 const MONTHS_EN = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -175,8 +176,9 @@ export default function Analytics() {
       {!loading && data && (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
             <KpiCard label={t("kpi_total_breakdowns")} value={ov.total_breakdowns ?? 0} accent={PURPLE} />
+            <KpiCard label={t("kpi_pm_count")}         value={ov.pm_count ?? 0} accent={PM_CLR} />
             <KpiCard label={t("kpi_downtime_hours")}   value={`${ov.total_downtime_hours ?? 0}h`} />
             <KpiCard label={t("kpi_mttr")}             value={fmtMttr(ov.mttr_minutes)} sub="Mean Time To Repair" />
             <KpiCard label={t("kpi_mtbf")}             value={ov.mtbf_hours ? `${ov.mtbf_hours}h` : "—"} sub="Mean Time Between Failures" />
@@ -200,6 +202,8 @@ export default function Analytics() {
                         stroke={PURPLE}   strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                   <Line type="monotone" dataKey="downtime_hours" name={t("chart_downtime")}
                         stroke={ELEC_CLR} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="pm_count"       name={t("chart_pm")}
+                        stroke={PM_CLR}   strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} strokeDasharray="4 2" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
