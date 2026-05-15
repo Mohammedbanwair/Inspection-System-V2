@@ -22,62 +22,71 @@ function timeAgo(dateStr, lang) {
   return new Date(dateStr).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US");
 }
 
-const BRANCH_GROUPS_BY_SPECIALTY = {
-  electrical: [
-    {
-      key: "elec-machines",
-      title_key: "branch_elec_machines",
-      desc_key: "branch_elec_machines_desc",
-      Icon: Gear,
-      children: [
-        { key: "elec-machines-a", category: "electrical", target_type: "machine", group: "A",
-          title_key: "group_a", desc_key: "branch_elec_machines_desc", Icon: Gear },
-        { key: "elec-machines-b", category: "electrical", target_type: "machine", group: "B",
-          title_key: "group_b", desc_key: "branch_elec_machines_desc", Icon: Gear },
-      ],
-    },
-    {
-      key: "panels",
-      title_key: "branch_panels",
-      desc_key: "branch_panels_desc",
-      Icon: ListChecks,
-      children: [
-        { key: "panels-main", category: "panels_main", target_type: "panel", panel_type: "main",
-          title_key: "branch_panels_main", desc_key: "branch_panels_main_desc", Icon: ListChecks },
-        { key: "panels-sub", category: "panels_sub", target_type: "panel", panel_type: "sub",
-          title_key: "branch_panels_sub", desc_key: "branch_panels_sub_desc", Icon: ListChecks },
-      ],
-    },
-  ],
-  mechanical: [
-    {
-      key: "mech-machines",
-      title_key: "branch_mech_machines",
-      desc_key: "branch_mech_machines_desc",
-      Icon: Wrench,
-      children: [
-        { key: "mech-machines-a", category: "mechanical", target_type: "machine", group: "A",
-          title_key: "group_a", desc_key: "branch_mech_machines_desc", Icon: Wrench },
-        { key: "mech-machines-b", category: "mechanical", target_type: "machine", group: "B",
-          title_key: "group_b", desc_key: "branch_mech_machines_desc", Icon: Wrench },
-      ],
-    },
-    {
-      key: "chillers",
-      title_key: "branch_chillers",
-      desc_key: "branch_chillers_desc",
-      Icon: Snowflake,
-      branch: { category: "chiller", target_type: "chiller" },
-    },
-    {
-      key: "cooling-towers",
-      title_key: "branch_cooling_towers",
-      desc_key: "branch_cooling_towers_desc",
-      Icon: Drop,
-      branch: { category: "cooling_tower", target_type: "cooling_tower" },
-    },
-  ],
-};
+const ALL_BRANCH_GROUPS = [
+  {
+    key: "elec-machines",
+    permKey: "inspection_electrical",
+    title_key: "branch_elec_machines",
+    desc_key: "branch_elec_machines_desc",
+    Icon: Gear,
+    children: [
+      { key: "elec-machines-a", category: "electrical", target_type: "machine", group: "A",
+        title_key: "group_a", desc_key: "branch_elec_machines_desc", Icon: Gear },
+      { key: "elec-machines-b", category: "electrical", target_type: "machine", group: "B",
+        title_key: "group_b", desc_key: "branch_elec_machines_desc", Icon: Gear },
+    ],
+  },
+  {
+    key: "panels",
+    permKey: "inspection_panels",
+    title_key: "branch_panels",
+    desc_key: "branch_panels_desc",
+    Icon: ListChecks,
+    children: [
+      { key: "panels-main", category: "panels_main", target_type: "panel", panel_type: "main",
+        title_key: "branch_panels_main", desc_key: "branch_panels_main_desc", Icon: ListChecks },
+      { key: "panels-sub", category: "panels_sub", target_type: "panel", panel_type: "sub",
+        title_key: "branch_panels_sub", desc_key: "branch_panels_sub_desc", Icon: ListChecks },
+    ],
+  },
+  {
+    key: "mech-machines",
+    permKey: "inspection_mechanical",
+    title_key: "branch_mech_machines",
+    desc_key: "branch_mech_machines_desc",
+    Icon: Wrench,
+    children: [
+      { key: "mech-machines-a", category: "mechanical", target_type: "machine", group: "A",
+        title_key: "group_a", desc_key: "branch_mech_machines_desc", Icon: Wrench },
+      { key: "mech-machines-b", category: "mechanical", target_type: "machine", group: "B",
+        title_key: "group_b", desc_key: "branch_mech_machines_desc", Icon: Wrench },
+    ],
+  },
+  {
+    key: "chillers",
+    permKey: "inspection_chiller",
+    title_key: "branch_chillers",
+    desc_key: "branch_chillers_desc",
+    Icon: Snowflake,
+    branch: { category: "chiller", target_type: "chiller" },
+  },
+  {
+    key: "cooling-towers",
+    permKey: "inspection_cooling_tower",
+    title_key: "branch_cooling_towers",
+    desc_key: "branch_cooling_towers_desc",
+    Icon: Drop,
+    branch: { category: "cooling_tower", target_type: "cooling_tower" },
+  },
+  {
+    key: "preventive",
+    permKey: "inspection_preventive",
+    title_key: "branch_preventive",
+    desc_key: "branch_preventive_desc",
+    Icon: ClipboardText,
+    branch: { category: "preventive", target_type: "machine" },
+  },
+];
 
 export default function TechDashboard() {
   const { user } = useAuth();
@@ -93,7 +102,7 @@ export default function TechDashboard() {
   useEffect(() => {
     api.get("/form-permissions/me")
       .then(({ data }) => setAllowedForms(data))
-      .catch(() => setAllowedForms({ inspection: true, breakdown: true, mdb_reading: true }));
+      .catch(() => setAllowedForms(null));
   }, []);
 
   const canEdit = (created_at) =>
@@ -118,7 +127,9 @@ export default function TechDashboard() {
 
   useEffect(() => { loadHistory(); }, []);
 
-  const branchGroups = BRANCH_GROUPS_BY_SPECIALTY[user?.specialty] || [];
+  const visibleBranches = ALL_BRANCH_GROUPS.filter(
+    (b) => !allowedForms || allowedForms[b.permKey] !== false,
+  );
   const Arrow = lang === "ar" ? ArrowLeft : ArrowRight;
 
   const todayStr = new Date().toDateString();
@@ -237,7 +248,7 @@ export default function TechDashboard() {
               </>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {(!allowedForms || allowedForms.inspection) && branchGroups.map((grp) => {
+                {visibleBranches.map((grp) => {
                   const { key, title_key, desc_key, Icon } = grp;
                   return (
                     <button key={key}

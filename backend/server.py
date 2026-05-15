@@ -2884,7 +2884,27 @@ async def export_analytics_pdf(
 # FORM PERMISSIONS
 # ═══════════════════════════════════════════════════════════════
 
-FORM_IDS = {"inspection", "breakdown", "mdb_reading"}
+FORM_IDS = {
+    "inspection_electrical", "inspection_panels",
+    "inspection_mechanical", "inspection_chiller",
+    "inspection_cooling_tower", "inspection_preventive",
+    "breakdown", "mdb_reading",
+}
+
+SPECIALTY_DEFAULTS = {
+    "electrical": {
+        "inspection_electrical": True,  "inspection_panels": True,
+        "inspection_mechanical": False, "inspection_chiller": False,
+        "inspection_cooling_tower": False, "inspection_preventive": False,
+        "breakdown": True, "mdb_reading": True,
+    },
+    "mechanical": {
+        "inspection_electrical": False, "inspection_panels": False,
+        "inspection_mechanical": True,  "inspection_chiller": True,
+        "inspection_cooling_tower": True, "inspection_preventive": False,
+        "breakdown": True, "mdb_reading": True,
+    },
+}
 
 class FormPermissionBody(BaseModel):
     forms: dict  # {form_id: bool}
@@ -2930,19 +2950,21 @@ async def delete_user_permissions(user_id: str, _=Depends(require_admin)):
 async def get_my_permissions(user=Depends(get_current_user)):
     if user["role"] == "admin":
         return {f: True for f in FORM_IDS}
+    spec = user.get("specialty", "")
     # User-specific override first
     doc = await db.form_permissions.find_one({"scope": "user", "target": user["id"]})
     if doc:
         forms = doc.get("forms", {})
-        return {f: forms.get(f, True) for f in FORM_IDS}
-    # Specialty default
-    spec = user.get("specialty", "")
+        base = SPECIALTY_DEFAULTS.get(spec, {f: True for f in FORM_IDS})
+        return {f: forms.get(f, base.get(f, True)) for f in FORM_IDS}
+    # Specialty DB override
     doc = await db.form_permissions.find_one({"scope": "specialty", "target": spec})
     if doc:
         forms = doc.get("forms", {})
-        return {f: forms.get(f, True) for f in FORM_IDS}
-    # All enabled by default
-    return {f: True for f in FORM_IDS}
+        base = SPECIALTY_DEFAULTS.get(spec, {f: True for f in FORM_IDS})
+        return {f: forms.get(f, base.get(f, True)) for f in FORM_IDS}
+    # Specialty hardcoded defaults
+    return SPECIALTY_DEFAULTS.get(spec, {f: True for f in FORM_IDS})
 
 
 @api.get("/stats/overview")
