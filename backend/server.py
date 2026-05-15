@@ -186,11 +186,13 @@ class UserUpdate(BaseModel):
 class EntityCreate(BaseModel):
     number: str
     name: Optional[str] = ""
+    group: Optional[str] = None
 
 
 class EntityUpdate(BaseModel):
     number: Optional[str] = None
     name: Optional[str] = None
+    group: Optional[str] = None
 
 
 class QuestionCreate(BaseModel):
@@ -489,6 +491,7 @@ class MachineCreate(BaseModel):
     group: Literal["A", "B"] = "A"
     manufacturing_year: Optional[str] = ""
     serial_number: Optional[str] = ""
+    power_consumption: Optional[str] = ""
 
 class MachineUpdate(BaseModel):
     number: Optional[str] = None
@@ -496,6 +499,7 @@ class MachineUpdate(BaseModel):
     group: Optional[Literal["A", "B"]] = None
     manufacturing_year: Optional[str] = None
     serial_number: Optional[str] = None
+    power_consumption: Optional[str] = None
 
 
 @api.get("/machines")
@@ -516,6 +520,7 @@ async def create_machine(body: MachineCreate, _=Depends(require_admin)):
            "group": body.group, "sort_order": count,
            "manufacturing_year": body.manufacturing_year or "",
            "serial_number": body.serial_number or "",
+           "power_consumption": body.power_consumption or "",
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.machines.insert_one(doc); doc.pop("_id", None)
     return doc
@@ -552,9 +557,9 @@ async def export_machines_excel(_=Depends(require_admin)):
     thick = Side(style="medium", color=PURPLE)
 
     HEADERS    = ["#", "Machine Number", "Name / Model", "Group",
-                  "Serial Number", "Manufacturing Year"]
+                  "Serial Number", "Manufacturing Year", "Power Consumption"]
     COL_WIDTHS = [5,   18,               28,              10,
-                  22,                  18]
+                  22,                  18,                18]
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -621,6 +626,7 @@ async def export_machines_excel(_=Depends(require_admin)):
             f"Group {m.get('group', 'A')}",
             m.get("serial_number", "") or "—",
             m.get("manufacturing_year", "") or "—",
+            m.get("power_consumption", "") or "—",
         ]
         for ci, val in enumerate(values, 1):
             cl   = get_column_letter(ci)
@@ -1509,44 +1515,67 @@ async def export_preventive_pdf(iid: str, _=Depends(require_admin)):
     )
     story = []
 
-    # ── HEADER: logo + title block + info rows ─────────────────────
+    # ── HEADER ────────────────────────────────────────────────────
     LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
-    logo_cell = PLImage(LOGO_PATH, width=3.0*cm, height=1.8*cm, kind='proportional') \
-                if os.path.exists(LOGO_PATH) else Paragraph("", p_info)
 
-    title_block = [
-        Paragraph("Hydraulic Injection Machine", p_title),
-        Spacer(1, 2),
-        Paragraph("PREVENTIVE MAINTENANCE CHECKLIST", p_sub),
-    ]
+    story_items = []
 
-    hw = [USABLE * 0.24, USABLE * 0.76]
-    # Row 0: logo + title;  Row 1: date + machine;  Row 2: shift + technician
-    header_tbl = Table(
+    # Logo — full width, centered, tall
+    if os.path.exists(LOGO_PATH):
+        logo = PLImage(LOGO_PATH, width=USABLE, height=3.2*cm, kind='proportional')
+        story_items.append(logo)
+        story_items.append(Spacer(1, 0.1*cm))
+
+    # Title block
+    title_tbl = Table(
         [
-            [logo_cell, title_block],
-            [Paragraph(f"<b>Date:</b>  {date_str}", p_info),
-             Paragraph(f"<b>Machine No.:</b>  {machine_no}"
-                       + (f"  &nbsp;&nbsp;  <b>Model:</b>  {machine_name}" if machine_name else ""), p_info)],
-            [Paragraph("<b>Shift:</b>", p_info),
-             Paragraph(f"<b>Maintenance Engineer:</b>  {tech_name}", p_info)],
+            [Paragraph("Hydraulic Injection Machine", p_title)],
+            [Paragraph("PREVENTIVE MAINTENANCE CHECKLIST", p_sub)],
         ],
-        colWidths=hw,
+        colWidths=[USABLE],
     )
-    header_tbl.setStyle(TableStyle([
-        ('BOX',        (0, 0), (-1, -1), 1.2, PURPLE),
-        ('INNERGRID',  (0, 0), (-1, -1), 0.3, MID_GREY),
-        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
-        ('ALIGN',      (0, 0), (0, 0),   'CENTER'),
-        ('BACKGROUND', (0, 0), (-1, 0),  LIGHT_GREY),
-        ('SPAN',       (0, 0), (0, 0)),
-        ('TOPPADDING',    (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('LEFTPADDING',   (0, 0), (-1, -1), 7),
-        ('RIGHTPADDING',  (0, 0), (-1, -1), 7),
+    title_tbl.setStyle(TableStyle([
+        ('ALIGN',         (0,0), (-1,-1), 'CENTER'),
+        ('BACKGROUND',    (0,0), (-1,-1), LIGHT_GREY),
+        ('BOX',           (0,0), (-1,-1), 1.5, PURPLE),
+        ('TOPPADDING',    (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
     ]))
-    story.append(header_tbl)
-    story.append(Spacer(1, 0.25 * cm))
+    story_items.append(title_tbl)
+    story_items.append(Spacer(1, 0.2*cm))
+
+    # Info row
+    info_tbl = Table(
+        [
+            [
+                Paragraph(f"<b>Date:</b>  {date_str}", p_info),
+                Paragraph(f"<b>Machine No.:</b>  {machine_no}" + (f"  &nbsp; <b>Model:</b>  {machine_name}" if machine_name else ""), p_info),
+            ],
+            [
+                Paragraph("<b>Shift:</b>  —", p_info),
+                Paragraph(f"<b>Maintenance Engineer:</b>  {tech_name}", p_info),
+            ],
+            [
+                Paragraph(f"<b>Time Received:</b>  {time_received}", p_info),
+                Paragraph(f"<b>Time Delivered:</b>  {time_delivered}", p_info),
+            ],
+        ],
+        colWidths=[USABLE * 0.4, USABLE * 0.6],
+    )
+    info_tbl.setStyle(TableStyle([
+        ('BOX',           (0,0), (-1,-1), 1.2, PURPLE),
+        ('INNERGRID',     (0,0), (-1,-1), 0.3, MID_GREY),
+        ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING',    (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING',   (0,0), (-1,-1), 8),
+        ('RIGHTPADDING',  (0,0), (-1,-1), 8),
+    ]))
+    story_items.append(info_tbl)
+    story_items.append(Spacer(1, 0.3*cm))
+
+    for item in story_items:
+        story.append(item)
 
     # ── CHECKLIST TABLE  (4 columns) ──────────────────────────────
     # Columns: # | CHECK POINTS | SPARE PART | OK/FAIL
