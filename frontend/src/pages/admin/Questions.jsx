@@ -4,13 +4,14 @@ import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
 
-const CATS = ["electrical", "mechanical", "chiller", "panels_main", "panels_sub"];
+const CATS = ["electrical", "mechanical", "chiller", "panels_main", "panels_sub", "cooling_tower"];
 const CAT_KEY = {
   electrical: "cat_electrical",
   mechanical: "cat_mechanical",
   chiller: "cat_chiller",
   panels_main: "cat_panels_main",
   panels_sub: "cat_panels_sub",
+  cooling_tower: "cat_cooling_tower",
 };
 
 export default function Questions() {
@@ -32,7 +33,7 @@ export default function Questions() {
   };
   useEffect(() => { load(); }, []);
 
-  const NUMERIC_CATS = ["panels_main", "panels_sub", "chiller"];
+  const NUMERIC_CATS = ["panels_main", "panels_sub", "chiller", "cooling_tower"];
 
   const openCreate = () => {
     setEditing(null); setText(""); setCategory("electrical");

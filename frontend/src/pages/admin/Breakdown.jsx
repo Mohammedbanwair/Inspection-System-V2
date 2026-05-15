@@ -6,6 +6,10 @@ import {
   CheckCircle, Trash, Lightning, WarningCircle, CheckSquare, Calendar,
   Gear, Plus, PencilSimple, X, FileXls,
 } from "@phosphor-icons/react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+} from "recharts";
 
 function parseTime12h(str) {
   if (!str) return null;
@@ -246,12 +250,34 @@ export default function Breakdown() {
   const todayStr = new Date().toDateString();
   const today    = list.filter((b) => new Date(b.created_at).toDateString() === todayStr).length;
 
+  // Chart data — daily counts (last 14 days with data)
+  const dailyCounts = {};
+  list.forEach((b) => {
+    const day = b.created_at?.slice(5, 10) || ""; // MM-DD
+    if (day) dailyCounts[day] = (dailyCounts[day] || 0) + 1;
+  });
+  const barData = Object.entries(dailyCounts)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-14)
+    .map(([date, count]) => ({ date, count }));
+
+  // Cause counts for pie
+  const causeCounts = {};
+  list.forEach((b) => {
+    const cause = b.brief_description || "Other";
+    causeCounts[cause] = (causeCounts[cause] || 0) + 1;
+  });
+  const pieData = Object.entries(causeCounts)
+    .sort(([,a],[,b]) => b - a)
+    .slice(0, 6)
+    .map(([name, value]) => ({ name, value }));
+  const PIE_COLORS = ["#6B2D6B","#005CBE","#EF4444","#F97316","#10B981","#8B5CF6"];
+
   return (
     <div data-testid="breakdown-panel">
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      {/* Stats + Charts */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
         {[
-          { label: t("total_breakdowns"),    value: total,    Icon: Lightning,     color: "text-slate-900" },
           { label: t("open_breakdowns"),     value: open,     Icon: WarningCircle, color: "text-amber-600" },
           { label: t("resolved_breakdowns"), value: resolved, Icon: CheckSquare,   color: "text-emerald-600" },
           { label: t("today_breakdowns"),    value: today,    Icon: Calendar,      color: "text-slate-900" },
@@ -265,6 +291,48 @@ export default function Breakdown() {
           </div>
         ))}
       </div>
+
+      {list.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* Bar chart — daily breakdown counts */}
+          <div className="bg-white border border-slate-200 p-4">
+            <div className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
+              {ar ? "التوقفات اليومية" : "Daily Breakdowns"}
+            </div>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={barData} margin={{ top: 0, right: 8, left: -20, bottom: 0 }}>
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v) => [v, ar ? "توقف" : "Breakdowns"]} />
+                <Bar dataKey="count" fill="#6B2D6B" radius={[3,3,0,0]} maxBarSize={32} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Pie chart — top causes */}
+          <div className="bg-white border border-slate-200 p-4">
+            <div className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
+              {ar ? "أبرز الأسباب" : "Top Causes"}
+            </div>
+            {pieData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={160}>
+                <PieChart>
+                  <Pie data={pieData} cx="40%" cy="50%" outerRadius={60} dataKey="value" label={({ value }) => value}>
+                    {pieData.map((_, idx) => <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <Legend
+                    layout="vertical" align="right" verticalAlign="middle"
+                    formatter={(v) => <span style={{ fontSize: 10 }}>{v.length > 20 ? v.slice(0, 20) + "…" : v}</span>}
+                  />
+                  <Tooltip formatter={(v, n) => [v, n]} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-40 flex items-center justify-center text-slate-400 text-sm">{t("no_results")}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Manage Reasons collapsible */}
       <div className="bg-white border border-slate-200 mb-4">

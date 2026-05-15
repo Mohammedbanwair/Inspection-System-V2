@@ -15,6 +15,7 @@ export default function Machines() {
   const [group, setGroup] = useState("A");
   const [manufacturingYear, setManufacturingYear] = useState("");
   const [serialNumber, setSerialNumber] = useState("");
+  const [powerConsumption, setPowerConsumption] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
   const dragItem = useRef(null);
   const dragOver = useRef(null);
@@ -30,7 +31,7 @@ export default function Machines() {
   const openCreate = () => {
     setEditing(null);
     setNumber(""); setName(""); setGroup("A");
-    setManufacturingYear(""); setSerialNumber("");
+    setManufacturingYear(""); setSerialNumber(""); setPowerConsumption("");
     setShowForm(true);
   };
 
@@ -39,13 +40,14 @@ export default function Machines() {
     setNumber(m.number); setName(m.name || ""); setGroup(m.group || "A");
     setManufacturingYear(m.manufacturing_year || "");
     setSerialNumber(m.serial_number || "");
+    setPowerConsumption(m.power_consumption || "");
     setShowForm(true);
   };
 
   const save = async (e) => {
     e.preventDefault();
     try {
-      const payload = { number, name, group, manufacturing_year: manufacturingYear, serial_number: serialNumber };
+      const payload = { number, name, group, manufacturing_year: manufacturingYear, serial_number: serialNumber, power_consumption: powerConsumption };
       if (editing) {
         await api.patch(`/machines/${editing.id}`, payload);
       } else {
@@ -112,7 +114,7 @@ export default function Machines() {
                       className={`h-10 px-4 text-sm font-semibold transition-all ${
                         groupFilter === g ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
                       }`}>
-                {g === "all" ? (ar ? "الكل" : "All") : `Group ${g}`}
+                {g === "all" ? (ar ? "الكل" : "All") : g === "A" ? (ar ? "إنجكشن" : "Injection") : (ar ? "IML" : "IML")}
               </button>
             ))}
           </div>
@@ -147,14 +149,17 @@ export default function Machines() {
                         className={`flex-1 text-sm font-bold transition-all ${
                           group === g ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
                         }`}>
-                  Group {g}
+                  {g === "A" ? "Injection" : "IML"}
                 </button>
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <input placeholder={t("serial_number")} value={serialNumber}
                    onChange={(e) => setSerialNumber(e.target.value)}
+                   className="h-12 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]" />
+            <input placeholder={ar ? "استهلاك الطاقة (kW)" : "Power Consumption (kW)"} value={powerConsumption}
+                   onChange={(e) => setPowerConsumption(e.target.value)}
                    className="h-12 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]" />
             <input placeholder={t("manufacturing_year")} value={manufacturingYear}
                    onChange={(e) => setManufacturingYear(e.target.value)}
@@ -184,6 +189,7 @@ export default function Machines() {
               <th className="text-start px-4 py-3 font-semibold">{t("name_field")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("group")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("serial_number")}</th>
+              <th className="text-start px-4 py-3 font-semibold">{ar ? "استهلاك الطاقة" : "Power (kW)"}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("manufacturing_year")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("actions")}</th>
             </tr>
@@ -201,10 +207,11 @@ export default function Machines() {
                 <td className="px-4 py-3 text-slate-600">{m.name || "—"}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-1 text-xs font-bold ${m.group === "A" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"}`}>
-                    Group {m.group || "A"}
+                    {m.group === "A" ? "Injection" : "IML"}
                   </span>
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{m.serial_number || "—"}</td>
+                <td className="px-4 py-3 font-mono text-xs text-slate-600">{m.power_consumption || "—"}</td>
                 <td className="px-4 py-3 text-slate-600">{m.manufacturing_year || "—"}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
@@ -223,7 +230,7 @@ export default function Machines() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan="7" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
+              <tr><td colSpan="8" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
             )}
           </tbody>
         </table>
