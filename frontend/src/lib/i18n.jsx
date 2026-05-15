@@ -262,6 +262,8 @@ const DICT = {
     elec_label: "كهربائي",
     mech_label: "ميكانيكي",
     tab_permissions: "الصلاحيات",
+    kpi_pm_count: "الصيانة الوقائية",
+    chart_pm: "صيانة وقائية",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -524,6 +526,8 @@ const DICT = {
     elec_label: "Electrical",
     mech_label: "Mechanical",
     tab_permissions: "Permissions",
+    kpi_pm_count: "Preventive Maintenance",
+    chart_pm: "Preventive Maint.",
   },
 };
 
