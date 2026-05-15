@@ -331,3 +331,6 @@ body {
 /* ── TopBar (uses dark: Tailwind variants — already correct) ─── */
 .dark header { border-bottom-color: var(--dm-border) !important; }
 .dark header.bg-white { background-color: var(--dm-surface) !important; }
+
+/* ── Notification bell dropdown ──────────────────────────────── */
+.dark .bg-blue-50\/40 { background-color: rgba(59,130,246,0.06) !important; }
