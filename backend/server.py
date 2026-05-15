@@ -2665,12 +2665,17 @@ async def get_maintenance_analytics(
             "pm_count": pm_month,
         })
 
+    mttr_h = mttr_min / 60
+    mtbf_h_safe = max(mtbf_h, 0)
+    availability_pct = round((mtbf_h_safe / (mtbf_h_safe + mttr_h)) * 100, 1) if (mtbf_h_safe + mttr_h) > 0 else 0.0
+
     return {
         "overview": {
             "total_breakdowns": total_breakdowns,
             "total_downtime_hours": round(total_minutes / 60, 1),
             "mttr_minutes": round(mttr_min, 1),
-            "mtbf_hours": round(max(mtbf_h, 0), 1),
+            "mtbf_hours": round(mtbf_h_safe, 1),
+            "availability_pct": availability_pct,
             "electrical_count": len(elec_docs),
             "mechanical_count": len(mech_docs),
             "most_failed_machine": most_failed,

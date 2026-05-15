@@ -176,12 +176,16 @@ export default function Analytics() {
       {!loading && data && (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-5">
             <KpiCard label={t("kpi_total_breakdowns")} value={ov.total_breakdowns ?? 0} accent={PURPLE} />
             <KpiCard label={t("kpi_pm_count")}         value={ov.pm_count ?? 0} accent={PM_CLR} />
             <KpiCard label={t("kpi_downtime_hours")}   value={`${ov.total_downtime_hours ?? 0}h`} />
             <KpiCard label={t("kpi_mttr")}             value={fmtMttr(ov.mttr_minutes)} sub="Mean Time To Repair" />
             <KpiCard label={t("kpi_mtbf")}             value={ov.mtbf_hours ? `${ov.mtbf_hours}h` : "—"} sub="Mean Time Between Failures" />
+            <KpiCard label={t("kpi_availability")}
+                     value={ov.availability_pct != null && ov.availability_pct > 0 ? `${ov.availability_pct}%` : "—"}
+                     sub="Availability = MTBF/(MTBF+MTTR)"
+                     accent={ov.availability_pct >= 95 ? "#10B981" : ov.availability_pct >= 80 ? "#F59E0B" : ov.availability_pct > 0 ? "#EF4444" : undefined} />
             <KpiCard label={t("kpi_most_failed")}      value={ov.most_failed_machine || "—"} accent={PURPLE}
                      sub={ar ? "أعلى عدد تعطلات" : "highest failure count"} />
           </div>
