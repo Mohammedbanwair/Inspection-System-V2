@@ -78,6 +78,18 @@ _reg_attempts: dict = defaultdict(list)
 _RL_REG_WINDOW = 60 * 60
 _RL_REG_MAX = 5
 
+# Export rate limiting: max 10 exports per minute per IP
+_export_attempts: dict = defaultdict(list)
+_RL_EXPORT_WINDOW = 60
+_RL_EXPORT_MAX = 10
+
+def _rl_check_export(ip: str) -> None:
+    now = time.time()
+    _export_attempts[ip] = [t for t in _export_attempts[ip] if now - t < _RL_EXPORT_WINDOW]
+    if len(_export_attempts[ip]) >= _RL_EXPORT_MAX:
+        raise HTTPException(429, "تم تجاوز الحد المسموح به لعمليات التصدير. حاول مرة أخرى بعد دقيقة.")
+    _export_attempts[ip].append(now)
+
 def _rl_check_reg(ip: str) -> None:
     now = time.time()
     _reg_attempts[ip] = [t for t in _reg_attempts[ip] if now - t < _RL_REG_WINDOW]
@@ -546,7 +558,8 @@ async def patch_machine(iid: str, body: MachineUpdate, _=Depends(require_admin))
 
 
 @api.get("/machines/export/excel")
-async def export_machines_excel(_=Depends(require_admin)):
+async def export_machines_excel(request: Request, _=Depends(require_admin)):
+    _rl_check_export(request.client.host)
     machines = await db.machines.find({}, {"_id": 0}).sort([("sort_order", 1), ("number", 1)]).to_list(2000)
 
     PURPLE       = "6B2D6B"
@@ -1039,9 +1052,10 @@ async def list_inspections(
 
 
 @api.get("/inspections/export/csv")
-async def export_csv(target_number: Optional[str] = None, target_type: Optional[str] = None,
+async def export_csv(request: Request, target_number: Optional[str] = None, target_type: Optional[str] = None,
                      category: Optional[str] = None, date_from: Optional[str] = None,
                      date_to: Optional[str] = None, _=Depends(require_admin)):
+    _rl_check_export(request.client.host)
     q: dict = {}
     if target_number: q["target_number"] = {"$regex": f"^{re.escape(target_number)}", "$options": "i"}
     if target_type: q["target_type"] = target_type
@@ -1051,7 +1065,7 @@ async def export_csv(target_number: Optional[str] = None, target_type: Optional[
         if date_from: rng["$gte"] = date_from
         if date_to: rng["$lte"] = date_to + "T23:59:59"
         q["created_at"] = rng
-    items = await db.inspections.find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    items = await db.inspections.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     questions = await db.questions.find({}, {"_id": 0}).to_list(2000)
     qmap = {x["id"]: x for x in questions}
     buf = io.StringIO(); buf.write("\ufeff")
@@ -1076,6 +1090,7 @@ async def export_csv(target_number: Optional[str] = None, target_type: Optional[
 
 @api.get("/inspections/export/excel")
 async def export_excel(
+    request: Request,
     target_number: Optional[str] = None,
     target_type: Optional[str] = None,
     category: Optional[str] = None,
@@ -1083,6 +1098,7 @@ async def export_excel(
     date_to: Optional[str] = None,
     admin_user=Depends(require_admin),
 ):
+    _rl_check_export(request.client.host)
     from datetime import date as date_cls, timedelta
     import calendar
 
@@ -2047,12 +2063,14 @@ async def delete_downtime_reason(rid: str, _=Depends(require_admin)):
 
 @api.get("/breakdowns/export/excel")
 async def export_breakdowns_excel(
+    request: Request,
     machine_number: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     status: Optional[str] = None,
     _=Depends(require_admin),
 ):
+    _rl_check_export(request.client.host)
     q: dict = {}
     if machine_number:
         q["machine_number"] = {"$regex": f"^{re.escape(machine_number)}", "$options": "i"}
@@ -2272,11 +2290,13 @@ async def create_mdb_reading(
 
 @api.get("/mdb-readings/export/excel")
 async def export_mdb_excel(
+    request: Request,
     panel_number: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     _=Depends(require_admin),
 ):
+    _rl_check_export(request.client.host)
     q: dict = {}
     if panel_number:
         q["panel_number"] = {"$regex": re.escape(panel_number), "$options": "i"}
@@ -2642,8 +2662,29 @@ async def get_maintenance_analytics(
         pm_q["created_at"] = q["created_at"]
     pm_total = await db.inspections.count_documents(pm_q)
 
-    # Monthly trend — last 12 months
+    # Monthly trend — last 12 months (2 DB calls instead of 24)
     MNAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    trend_start_m = now.month - 11
+    trend_start_y = now.year
+    while trend_start_m <= 0:
+        trend_start_m += 12
+        trend_start_y -= 1
+    trend_start_str = f"{trend_start_y:04d}-{trend_start_m:02d}-01"
+
+    trend_bdocs = await db.breakdowns.find(
+        {"created_at": {"$gte": trend_start_str}},
+        {"_id": 0, "created_at": 1, "start_time": 1, "end_time": 1},
+    ).to_list(10000)
+    bd_by_ym: dict = defaultdict(list)
+    for d in trend_bdocs:
+        bd_by_ym[d["created_at"][:7]].append(d)
+
+    pm_agg = await db.inspections.aggregate([
+        {"$match": {"category": "preventive", "created_at": {"$gte": trend_start_str}}},
+        {"$group": {"_id": {"$substr": ["$created_at", 0, 7]}, "count": {"$sum": 1}}},
+    ]).to_list(50)
+    pm_by_ym = {r["_id"]: r["count"] for r in pm_agg}
+
     trend = []
     for i in range(11, -1, -1):
         mo = now.month - i
@@ -2651,18 +2692,13 @@ async def get_maintenance_analytics(
         while mo <= 0:
             mo += 12
             yr -= 1
-        nx_y2, nx_m2 = (yr + 1, 1) if mo == 12 else (yr, mo + 1)
-        date_rng = {"$gte": f"{yr:04d}-{mo:02d}-01", "$lt": f"{nx_y2:04d}-{nx_m2:02d}-01"}
-        tdocs = await db.breakdowns.find(
-            {"created_at": date_rng},
-            {"_id": 0, "start_time": 1, "end_time": 1},
-        ).to_list(2000)
-        pm_month = await db.inspections.count_documents({"category": "preventive", "created_at": date_rng})
+        ym_key = f"{yr:04d}-{mo:02d}"
+        month_docs = bd_by_ym.get(ym_key, [])
         trend.append({
             "month": f"{MNAMES[mo-1]} {yr}",
-            "count": len(tdocs),
-            "downtime_hours": round(sum(_calc_duration_minutes(d.get("start_time",""), d.get("end_time","")) for d in tdocs) / 60, 1),
-            "pm_count": pm_month,
+            "count": len(month_docs),
+            "downtime_hours": round(sum(_calc_duration_minutes(d.get("start_time",""), d.get("end_time","")) for d in month_docs) / 60, 1),
+            "pm_count": pm_by_ym.get(ym_key, 0),
         })
 
     mttr_h = mttr_min / 60
@@ -2693,12 +2729,14 @@ async def get_maintenance_analytics(
 
 @api.get("/analytics/maintenance/export/excel")
 async def export_analytics_excel(
+    request: Request,
     year: Optional[int] = None,
     month: Optional[int] = None,
     machine_id: Optional[str] = None,
     specialty: Optional[str] = None,
     _=Depends(require_admin),
 ):
+    _rl_check_export(request.client.host)
     now = datetime.now(timezone.utc)
     eff_year = year or now.year
     q: dict = {}
@@ -3130,7 +3168,16 @@ async def startup():
     await db.inspections.create_index("target_id")
     await db.inspections.create_index("category")
     await db.inspections.create_index([("target_id", 1), ("category", 1)])
+    await db.inspections.create_index([("category", 1), ("created_at", -1)])
+    await db.inspections.create_index([("target_number", 1), ("created_at", -1)])
     await db.inspections.create_index("target_number")
+    await db.breakdowns.create_index("id", unique=True)
+    await db.breakdowns.create_index("created_at")
+    await db.breakdowns.create_index("machine_id")
+    await db.breakdowns.create_index([("created_at", 1), ("machine_id", 1)])
+    await db.mdb_readings.create_index("created_at")
+    for c in ("machines", "chillers", "panels", "cooling_towers"):
+        await db[c].create_index("sort_order")
     await db.registration_requests.create_index("status")
     await db.registration_requests.create_index("expires_at", expireAfterSeconds=0, sparse=True)
 
