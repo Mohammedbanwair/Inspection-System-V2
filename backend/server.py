@@ -65,8 +65,12 @@ _RL_MAX    = 5          # max failed attempts before block
 
 def _rl_check(ip: str) -> None:
     now = time.time()
-    _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < _RL_WINDOW]
-    if len(_login_attempts[ip]) >= _RL_MAX:
+    recent = [t for t in _login_attempts[ip] if now - t < _RL_WINDOW]
+    if recent:
+        _login_attempts[ip] = recent
+    else:
+        _login_attempts.pop(ip, None)
+    if len(_login_attempts.get(ip, [])) >= _RL_MAX:
         raise HTTPException(429, "تم تجاوز عدد المحاولات المسموح بها. حاول مرة أخرى بعد 15 دقيقة.")
 
 def _rl_fail(ip: str) -> None:
@@ -79,6 +83,19 @@ _reg_attempts: dict = defaultdict(list)
 _RL_REG_WINDOW = 60 * 60
 _RL_REG_MAX = 5
 
+def _rl_check_reg(ip: str) -> None:
+    now = time.time()
+    recent = [t for t in _reg_attempts[ip] if now - t < _RL_REG_WINDOW]
+    if recent:
+        _reg_attempts[ip] = recent
+    else:
+        _reg_attempts.pop(ip, None)
+    if len(_reg_attempts.get(ip, [])) >= _RL_REG_MAX:
+        raise HTTPException(429, "تم تجاوز عدد طلبات التسجيل المسموح بها. حاول مرة أخرى بعد ساعة.")
+
+def _rl_fail_reg(ip: str) -> None:
+    _reg_attempts[ip].append(time.time())
+
 # Export rate limiting: max 10 exports per minute per IP
 _export_attempts: dict = defaultdict(list)
 _RL_EXPORT_WINDOW = 60
@@ -86,19 +103,15 @@ _RL_EXPORT_MAX = 10
 
 def _rl_check_export(ip: str) -> None:
     now = time.time()
-    _export_attempts[ip] = [t for t in _export_attempts[ip] if now - t < _RL_EXPORT_WINDOW]
-    if len(_export_attempts[ip]) >= _RL_EXPORT_MAX:
+    recent = [t for t in _export_attempts[ip] if now - t < _RL_EXPORT_WINDOW]
+    if recent:
+        _export_attempts[ip] = recent
+    else:
+        _export_attempts.pop(ip, None)
+    if len(_export_attempts.get(ip, [])) >= _RL_EXPORT_MAX:
         raise HTTPException(429, "تم تجاوز الحد المسموح به لعمليات التصدير. حاول مرة أخرى بعد دقيقة.")
     _export_attempts[ip].append(now)
 
-def _rl_check_reg(ip: str) -> None:
-    now = time.time()
-    _reg_attempts[ip] = [t for t in _reg_attempts[ip] if now - t < _RL_REG_WINDOW]
-    if len(_reg_attempts[ip]) >= _RL_REG_MAX:
-        raise HTTPException(429, "تم تجاوز عدد طلبات التسجيل المسموح بها. حاول مرة أخرى بعد ساعة.")
-
-def _rl_fail_reg(ip: str) -> None:
-    _reg_attempts[ip].append(time.time())
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
