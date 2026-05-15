@@ -264,6 +264,13 @@ const DICT = {
     tab_permissions: "الصلاحيات",
     kpi_pm_count: "الصيانة الوقائية",
     chart_pm: "صيانة وقائية",
+    monthly_breakdown_title: "المؤشر الشهري — أسباب التوقف",
+    monthly_breakdowns_count: "توقفات الشهر",
+    monthly_resolved: "تم الحل",
+    monthly_open: "لا يزال مفتوحاً",
+    monthly_downtime_hours: "ساعات التوقف",
+    top_causes_title: "أبرز أسباب التوقف هذا الشهر",
+    no_breakdowns_month: "لا توجد توقفات هذا الشهر",
   },
   en: {
     app_title: "Digital Inspection System",
@@ -528,6 +535,13 @@ const DICT = {
     tab_permissions: "Permissions",
     kpi_pm_count: "Preventive Maintenance",
     chart_pm: "Preventive Maint.",
+    monthly_breakdown_title: "Monthly Indicator — Downtime Causes",
+    monthly_breakdowns_count: "Breakdowns This Month",
+    monthly_resolved: "Resolved",
+    monthly_open: "Still Open",
+    monthly_downtime_hours: "Downtime Hours",
+    top_causes_title: "Top Downtime Causes This Month",
+    no_breakdowns_month: "No breakdowns this month",
   },
 };
 

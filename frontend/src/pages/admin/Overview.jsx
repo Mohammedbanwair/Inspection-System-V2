@@ -3,8 +3,8 @@ import { api, formatApiError } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import {
-  ClipboardText, Wrench, UsersThree, Question, Warning, CalendarCheck,
-  Snowflake, ListChecks, WarningOctagon,
+  ClipboardText, Wrench, CalendarCheck,
+  Snowflake, ListChecks, WarningOctagon, Lightning,
 } from "@phosphor-icons/react";
 
 const CAT_KEY = {
@@ -26,21 +26,34 @@ function Stat({ icon: Icon, label, value, accent, testid }) {
   );
 }
 
+function MiniStat({ label, value, color }) {
+  return (
+    <div className="flex flex-col gap-1 text-center">
+      <div className={`text-2xl font-bold ${color || "text-slate-900"}`}>{value}</div>
+      <div className="text-xs font-semibold text-slate-500 leading-tight">{label}</div>
+    </div>
+  );
+}
+
 export default function Overview() {
   const { t, lang } = useI18n();
+  const ar = lang === "ar";
   const [stats, setStats] = useState(null);
   const [openFails, setOpenFails] = useState([]);
+  const [monthly, setMonthly] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const [s, f] = await Promise.all([
+        const [s, f, m] = await Promise.all([
           api.get("/stats/overview"),
           api.get("/failures/open"),
+          api.get("/stats/monthly-breakdown"),
         ]);
         setStats(s.data);
         setOpenFails(f.data);
+        setMonthly(m.data);
       } catch (e) { toast.error(formatApiError(e)); }
       finally { setLoading(false); }
     })();
@@ -57,15 +70,99 @@ export default function Overview() {
 
   return (
     <div className="space-y-6" data-testid="admin-overview">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <Stat icon={ClipboardText} label={t("total_inspections")} value={stats?.total_inspections ?? "—"} testid="stat-total-inspections" />
         <Stat icon={CalendarCheck} label={t("today_inspections")} value={stats?.today_inspections ?? "—"} accent="bg-[#005CBE] text-white" testid="stat-today-inspections" />
-        <Stat icon={WarningOctagon} label={t("open_fails_stat")} value={stats?.open_fails ?? "—"} accent="bg-red-500 text-white" testid="stat-open-fails" />
-        <Stat icon={Wrench} label={t("machines_label")} value={stats?.total_machines ?? "—"} testid="stat-machines" />
-        <Stat icon={Snowflake} label={t("chillers_label")} value={stats?.total_chillers ?? "—"} testid="stat-chillers" />
-        <Stat icon={ListChecks} label={t("panels_label")} value={stats?.total_panels ?? "—"} testid="stat-panels" />
+        <Stat icon={Wrench}        label={t("machines_label")}    value={stats?.total_machines ?? "—"} testid="stat-machines" />
+        <Stat icon={Snowflake}     label={t("chillers_label")}    value={stats?.total_chillers ?? "—"} testid="stat-chillers" />
+        <Stat icon={ListChecks}    label={t("panels_label")}      value={stats?.total_panels ?? "—"} testid="stat-panels" />
       </div>
 
+      {/* Monthly Breakdown Indicator */}
+      <div className="bg-white border border-slate-200">
+        <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+          <Lightning size={18} weight="bold" className="text-amber-500" />
+          <h3 className="text-base font-bold text-slate-900">{t("monthly_breakdown_title")}</h3>
+        </div>
+
+        {monthly?.total === 0 ? (
+          <div className="px-5 py-8 text-center text-emerald-700 font-semibold bg-emerald-50/40">
+            ✓ {t("no_breakdowns_month")}
+          </div>
+        ) : (
+          <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            {/* Mini stats row */}
+            <div>
+              <div className="grid grid-cols-4 gap-3 mb-5 bg-slate-50 border border-slate-100 p-4">
+                <MiniStat label={t("monthly_breakdowns_count")} value={monthly?.total ?? 0} />
+                <MiniStat label={t("monthly_resolved")}         value={monthly?.resolved ?? 0} color="text-emerald-600" />
+                <MiniStat label={t("monthly_open")}             value={monthly?.open ?? 0}     color={monthly?.open > 0 ? "text-red-500" : "text-slate-900"} />
+                <MiniStat label={t("monthly_downtime_hours")}   value={`${monthly?.downtime_hours ?? 0}h`} color="text-amber-600" />
+              </div>
+
+              {/* Resolved vs Open bar */}
+              {monthly?.total > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold text-slate-500">
+                    <span>{t("monthly_resolved")}</span>
+                    <span>{Math.round((monthly.resolved / monthly.total) * 100)}%</span>
+                  </div>
+                  <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 rounded-full transition-all"
+                      style={{ width: `${(monthly.resolved / monthly.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Top causes */}
+            <div>
+              <div className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
+                {t("top_causes_title")}
+              </div>
+              {monthly?.top_causes?.length === 0 ? (
+                <p className="text-sm text-slate-400">—</p>
+              ) : (
+                <div className="space-y-2">
+                  {monthly?.top_causes?.map((c, i) => {
+                    const maxCount = monthly.top_causes[0]?.count || 1;
+                    const pct = Math.round((c.count / maxCount) * 100);
+                    return (
+                      <div key={i} className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-slate-700 truncate flex-1" title={c.cause}>
+                            <span className="font-bold text-slate-400 me-2">{i + 1}.</span>
+                            {c.cause}
+                          </span>
+                          <span className="text-xs font-bold text-slate-600 shrink-0 bg-slate-100 px-2 py-0.5">
+                            {c.count}x
+                          </span>
+                        </div>
+                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: i === 0 ? "#EF4444" : i === 1 ? "#F97316" : "#F59E0B",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Open Failures Table */}
       <div>
         <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
           <WarningOctagon size={20} weight="bold" className="text-red-500" />
@@ -100,7 +197,7 @@ export default function Overview() {
                   </td>
                   <td className="px-4 py-3">{f.technician_name}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs">
-                    {new Date(f.since).toLocaleString(lang === "ar" ? "ar-EG" : "en-US")}
+                    {new Date(f.since).toLocaleString(ar ? "ar-EG" : "en-US")}
                   </td>
                 </tr>
               ))}
