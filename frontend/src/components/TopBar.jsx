@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import { Gear, SignOut, User, Translate, Moon, Sun } from "@phosphor-icons/react";
 import { useTheme } from "../context/ThemeContext";
+import NotificationBell from "./NotificationBell";
 
 export default function TopBar() {
   const { user, logout } = useAuth();
@@ -31,6 +32,7 @@ export default function TopBar() {
         </Link>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {user?.role === "admin" && <NotificationBell />}
           <button onClick={toggleTheme}
                   className="h-9 w-9 sm:h-10 sm:px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center"
                   title="Toggle dark mode">

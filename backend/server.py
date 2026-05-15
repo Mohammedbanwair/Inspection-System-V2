@@ -23,6 +23,7 @@ from typing import List, Optional, Literal
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, EmailStr
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -64,8 +65,12 @@ _RL_MAX    = 5          # max failed attempts before block
 
 def _rl_check(ip: str) -> None:
     now = time.time()
-    _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < _RL_WINDOW]
-    if len(_login_attempts[ip]) >= _RL_MAX:
+    recent = [t for t in _login_attempts[ip] if now - t < _RL_WINDOW]
+    if recent:
+        _login_attempts[ip] = recent
+    else:
+        _login_attempts.pop(ip, None)
+    if len(_login_attempts.get(ip, [])) >= _RL_MAX:
         raise HTTPException(429, "تم تجاوز عدد المحاولات المسموح بها. حاول مرة أخرى بعد 15 دقيقة.")
 
 def _rl_fail(ip: str) -> None:
@@ -78,6 +83,19 @@ _reg_attempts: dict = defaultdict(list)
 _RL_REG_WINDOW = 60 * 60
 _RL_REG_MAX = 5
 
+def _rl_check_reg(ip: str) -> None:
+    now = time.time()
+    recent = [t for t in _reg_attempts[ip] if now - t < _RL_REG_WINDOW]
+    if recent:
+        _reg_attempts[ip] = recent
+    else:
+        _reg_attempts.pop(ip, None)
+    if len(_reg_attempts.get(ip, [])) >= _RL_REG_MAX:
+        raise HTTPException(429, "تم تجاوز عدد طلبات التسجيل المسموح بها. حاول مرة أخرى بعد ساعة.")
+
+def _rl_fail_reg(ip: str) -> None:
+    _reg_attempts[ip].append(time.time())
+
 # Export rate limiting: max 10 exports per minute per IP
 _export_attempts: dict = defaultdict(list)
 _RL_EXPORT_WINDOW = 60
@@ -85,21 +103,49 @@ _RL_EXPORT_MAX = 10
 
 def _rl_check_export(ip: str) -> None:
     now = time.time()
-    _export_attempts[ip] = [t for t in _export_attempts[ip] if now - t < _RL_EXPORT_WINDOW]
-    if len(_export_attempts[ip]) >= _RL_EXPORT_MAX:
+    recent = [t for t in _export_attempts[ip] if now - t < _RL_EXPORT_WINDOW]
+    if recent:
+        _export_attempts[ip] = recent
+    else:
+        _export_attempts.pop(ip, None)
+    if len(_export_attempts.get(ip, [])) >= _RL_EXPORT_MAX:
         raise HTTPException(429, "تم تجاوز الحد المسموح به لعمليات التصدير. حاول مرة أخرى بعد دقيقة.")
     _export_attempts[ip].append(now)
 
-def _rl_check_reg(ip: str) -> None:
-    now = time.time()
-    _reg_attempts[ip] = [t for t in _reg_attempts[ip] if now - t < _RL_REG_WINDOW]
-    if len(_reg_attempts[ip]) >= _RL_REG_MAX:
-        raise HTTPException(429, "تم تجاوز عدد طلبات التسجيل المسموح بها. حاول مرة أخرى بعد ساعة.")
-
-def _rl_fail_reg(ip: str) -> None:
-    _reg_attempts[ip].append(time.time())
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# ── Audit log helper ─────────────────────────────────────────────
+async def _audit(actor_id: str, actor_name: str, action: str,
+                 resource_type: str, resource_id: str = "", details: str = "") -> None:
+    try:
+        await db.audit_logs.insert_one({
+            "id": str(uuid.uuid4()),
+            "actor_id": actor_id,
+            "actor_name": actor_name,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "details": details,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        pass
+
+# ── Notification helper ───────────────────────────────────────────
+async def _notify(ntype: str, title_ar: str, body_ar: str, ref_id: str = "") -> None:
+    try:
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "type": ntype,
+            "title_ar": title_ar,
+            "body_ar": body_ar,
+            "ref_id": ref_id,
+            "is_read": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        pass
 
 CATS = ["electrical", "mechanical", "chiller", "panels_main", "panels_sub", "cooling_tower", "preventive"]
 Category = Literal["electrical", "mechanical", "chiller", "panels_main", "panels_sub", "cooling_tower", "preventive"]
@@ -304,6 +350,10 @@ async def register_request(body: RegisterRequest, request: Request):
     }
     await db.registration_requests.insert_one(doc)
     _rl_fail_reg(ip)
+    await _notify("new_registration",
+                  f"طلب تسجيل جديد",
+                  f"طلب {body.name.strip()} ({emp}) الانضمام للنظام",
+                  doc["id"])
     doc.pop("_id", None); doc.pop("password_hash", None)
     return doc
 
@@ -330,7 +380,7 @@ class ApproveBody(BaseModel):
 async def approve_registration(
     rid: str,
     body: ApproveBody,
-    _=Depends(require_admin),
+    admin=Depends(require_admin),
 ):
     specialty = body.specialty
     req = await db.registration_requests.find_one({"id": rid, "status": "pending"})
@@ -354,6 +404,8 @@ async def approve_registration(
                                "approved_at": datetime.now(timezone.utc).isoformat(),
                                "expires_at": datetime.now(timezone.utc) + timedelta(days=30)}}
     )
+    await _audit(admin["id"], admin["name"], "approve", "registration", rid,
+                 f"{req['name']} ({emp})")
     return {"ok": True}
 
 
@@ -406,7 +458,7 @@ async def list_users(_=Depends(require_admin)):
 
 
 @api.post("/users")
-async def create_user(body: UserCreate, _=Depends(require_admin)):
+async def create_user(body: UserCreate, admin=Depends(require_admin)):
     emp = body.employee_number.strip().upper()
     if not emp:
         raise HTTPException(400, "رقم الموظف مطلوب")
@@ -415,7 +467,6 @@ async def create_user(body: UserCreate, _=Depends(require_admin)):
     specialty = body.specialty if body.role == "technician" else None
     if body.role == "technician" and not specialty:
         raise HTTPException(400, "يجب تحديد تخصص الفني")
-    # helper role: no specialty needed
     doc = {"id": str(uuid.uuid4()), "employee_number": emp, "name": body.name,
            "role": body.role, "specialty": specialty,
            "password_hash": hash_password(body.password),
@@ -425,6 +476,7 @@ async def create_user(body: UserCreate, _=Depends(require_admin)):
     except pymongo.errors.DuplicateKeyError:
         raise HTTPException(400, "رقم الموظف مستخدم مسبقاً")
     doc.pop("password_hash"); doc.pop("_id", None)
+    await _audit(admin["id"], admin["name"], "create", "user", doc["id"], f"{body.name} ({emp})")
     return doc
 
 
@@ -446,9 +498,13 @@ async def update_user(uid: str, body: UserUpdate, _=Depends(require_admin)):
 async def delete_user(uid: str, admin=Depends(require_admin)):
     if uid == admin["id"]:
         raise HTTPException(400, "لا يمكن حذف حسابك")
+    target = await db.users.find_one({"id": uid}, {"_id": 0, "name": 1, "employee_number": 1})
     res = await db.users.delete_one({"id": uid})
     if res.deleted_count == 0:
         raise HTTPException(404, "غير موجود")
+    if target:
+        await _audit(admin["id"], admin["name"], "delete", "user", uid,
+                     f"{target.get('name','')} ({target.get('employee_number','')})")
     return {"ok": True}
 
 
@@ -523,7 +579,7 @@ async def list_machines(group: Optional[str] = None, user=Depends(get_current_us
 
 
 @api.post("/machines")
-async def create_machine(body: MachineCreate, _=Depends(require_admin)):
+async def create_machine(body: MachineCreate, admin=Depends(require_admin)):
     num = body.number.strip()
     if await db.machines.find_one({"number": num}):
         raise HTTPException(400, "المكينة: الرقم موجود مسبقاً")
@@ -535,6 +591,7 @@ async def create_machine(body: MachineCreate, _=Depends(require_admin)):
            "power_consumption": body.power_consumption or "",
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.machines.insert_one(doc); doc.pop("_id", None)
+    await _audit(admin["id"], admin["name"], "create", "machine", doc["id"], f"مكينة {num}")
     return doc
 
 
@@ -672,9 +729,11 @@ async def export_machines_excel(request: Request, _=Depends(require_admin)):
 
 
 @api.delete("/machines/{iid}")
-async def delete_machine(iid: str, _=Depends(require_admin)):
+async def delete_machine(iid: str, admin=Depends(require_admin)):
+    m = await db.machines.find_one({"id": iid}, {"_id": 0, "number": 1})
     res = await db.machines.delete_one({"id": iid})
     if res.deleted_count == 0: raise HTTPException(404, "المكينة غير موجودة")
+    await _audit(admin["id"], admin["name"], "delete", "machine", iid, f"مكينة {m.get('number','') if m else ''}")
     return {"ok": True}
 
 
@@ -753,7 +812,7 @@ async def list_questions(category: Optional[str] = None, user=Depends(get_curren
 
 
 @api.post("/questions")
-async def create_question(body: QuestionCreate, _=Depends(require_admin)):
+async def create_question(body: QuestionCreate, admin=Depends(require_admin)):
     numeric_allowed = ("panels_main", "panels_sub", "chiller")
     answer_type = body.answer_type if body.category in numeric_allowed else "yes_no"
     doc = {"id": str(uuid.uuid4()), "category": body.category,
@@ -764,6 +823,7 @@ async def create_question(body: QuestionCreate, _=Depends(require_admin)):
     if body.section:
         doc["section"] = body.section
     await db.questions.insert_one(doc); doc.pop("_id", None)
+    await _audit(admin["id"], admin["name"], "create", "question", doc["id"], body.text[:80])
     return doc
 
 
@@ -782,9 +842,12 @@ async def update_question(qid: str, body: QuestionUpdate, _=Depends(require_admi
 
 
 @api.delete("/questions/{qid}")
-async def delete_question(qid: str, _=Depends(require_admin)):
+async def delete_question(qid: str, admin=Depends(require_admin)):
+    q = await db.questions.find_one({"id": qid}, {"_id": 0, "text": 1})
     res = await db.questions.delete_one({"id": qid})
     if res.deleted_count == 0: raise HTTPException(404, "غير موجود")
+    await _audit(admin["id"], admin["name"], "delete", "question", qid,
+                 (q.get("text","")[:80] if q else ""))
     return {"ok": True}
 
 
@@ -1962,6 +2025,12 @@ async def create_breakdown(body: BreakdownCreate, user=Depends(get_current_user)
     }
     await db.breakdowns.insert_one(doc)
     doc.pop("_id", None)
+    await _audit(user["id"], user["name"], "create", "breakdown", doc["id"],
+                 f"مكينة {machine['number']} — {body.brief_description[:60]}")
+    await _notify("new_breakdown",
+                  f"عطل جديد — مكينة {machine['number']}",
+                  f"سجّل {user['name']} عطلاً: {body.brief_description[:80]}",
+                  doc["id"])
     return doc
 
 
@@ -1996,7 +2065,7 @@ async def list_breakdowns(
 
 
 @api.patch("/breakdowns/{bid}/resolve")
-async def resolve_breakdown(bid: str, _=Depends(require_admin)):
+async def resolve_breakdown(bid: str, admin=Depends(require_admin)):
     doc = await db.breakdowns.find_one({"id": bid})
     if not doc:
         raise HTTPException(404, "غير موجود")
@@ -2004,6 +2073,12 @@ async def resolve_breakdown(bid: str, _=Depends(require_admin)):
         {"id": bid},
         {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc).isoformat()}},
     )
+    await _audit(admin["id"], admin["name"], "resolve", "breakdown", bid,
+                 f"مكينة {doc.get('machine_number','')} — {doc.get('brief_description','')[:60]}")
+    await _notify("breakdown_resolved",
+                  f"تم حل العطل — مكينة {doc.get('machine_number','')}",
+                  f"أغلق {admin['name']} عطل: {doc.get('brief_description','')[:80]}",
+                  bid)
     return {"ok": True}
 
 
@@ -3103,6 +3178,57 @@ async def stats_overview(_=Depends(require_admin)):
             "open_fails": open_fails}
 
 
+# ---------- Notifications ----------
+@api.get("/notifications")
+async def list_notifications(_=Depends(require_admin)):
+    items = await db.notifications.find({}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    unread = sum(1 for n in items if not n.get("is_read"))
+    return {"items": items, "unread": unread}
+
+
+@api.patch("/notifications/{nid}/read")
+async def mark_notification_read(nid: str, _=Depends(require_admin)):
+    await db.notifications.update_one({"id": nid}, {"$set": {"is_read": True}})
+    return {"ok": True}
+
+
+@api.patch("/notifications/read-all")
+async def mark_all_read(_=Depends(require_admin)):
+    await db.notifications.update_many({"is_read": False}, {"$set": {"is_read": True}})
+    return {"ok": True}
+
+
+@api.delete("/notifications/{nid}")
+async def delete_notification(nid: str, _=Depends(require_admin)):
+    await db.notifications.delete_one({"id": nid})
+    return {"ok": True}
+
+
+# ---------- Audit Log ----------
+@api.get("/audit-logs")
+async def list_audit_logs(
+    page: int = 1,
+    limit: int = 50,
+    resource_type: Optional[str] = None,
+    actor_id: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    q: dict = {}
+    if resource_type: q["resource_type"] = resource_type
+    if actor_id: q["actor_id"] = actor_id
+    if date_from or date_to:
+        rng: dict = {}
+        if date_from: rng["$gte"] = date_from
+        if date_to: rng["$lte"] = date_to + "T23:59:59"
+        q["created_at"] = rng
+    skip = (page - 1) * limit
+    total = await db.audit_logs.count_documents(q)
+    items = await db.audit_logs.find(q, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return {"total": total, "page": page, "items": items}
+
+
 # ---------- Seed ----------
 DEFAULT_QUESTIONS = {
     "electrical": ["فحص لوحة الكهرباء الرئيسية", "التحقق من الكابلات والتوصيلات",
@@ -3180,6 +3306,11 @@ async def startup():
         await db[c].create_index("sort_order")
     await db.registration_requests.create_index("status")
     await db.registration_requests.create_index("expires_at", expireAfterSeconds=0, sparse=True)
+    await db.audit_logs.create_index("created_at", expireAfterSeconds=90 * 24 * 3600)
+    await db.audit_logs.create_index("actor_id")
+    await db.audit_logs.create_index([("resource_type", 1), ("created_at", -1)])
+    await db.notifications.create_index("created_at", expireAfterSeconds=30 * 24 * 3600)
+    await db.notifications.create_index("is_read")
 
     # Migration: backfill sort_order for chillers, panels, cooling_towers missing it
     for coll_name in ("chillers", "panels", "cooling_towers"):
@@ -3435,6 +3566,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(CORSMiddleware, allow_credentials=True,
                    allow_origins=_cors_origins,
                    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],

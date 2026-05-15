@@ -18,10 +18,11 @@ import BreakdownAdmin from "./admin/Breakdown";
 import MDBReadings from "./admin/MDBReadings";
 import Analytics from "./admin/Analytics";
 import Permissions from "./admin/Permissions";
+import AuditLog from "./admin/AuditLog";
 import {
   ChartBar, Wrench, Question, UsersThree, ClipboardText, Snowflake, ListChecks,
   WarningOctagon, UserPlus, Drop, Clipboard, CalendarCheck, Lightning,
-  CaretDown, CaretRight, List, X, Gauge, TrendUp, ShieldCheck,
+  CaretDown, CaretRight, List, X, Gauge, TrendUp, ShieldCheck, ClockCounterClockwise,
 } from "@phosphor-icons/react";
 
 const NAV = [
@@ -50,10 +51,11 @@ const NAV = [
   {
     group: "group_setup",
     items: [
-      { key: "questions",   label_key: "tab_questions",   Icon: Question,    Component: Questions },
-      { key: "users",       label_key: "tab_users",       Icon: UsersThree,  Component: Users },
-      { key: "requests",    label_key: "tab_requests",    Icon: UserPlus,    Component: RegistrationRequests },
-      { key: "permissions", label_key: "tab_permissions", Icon: ShieldCheck, Component: Permissions },
+      { key: "questions",   label_key: "tab_questions",   Icon: Question,               Component: Questions },
+      { key: "users",       label_key: "tab_users",       Icon: UsersThree,             Component: Users },
+      { key: "requests",    label_key: "tab_requests",    Icon: UserPlus,               Component: RegistrationRequests },
+      { key: "permissions", label_key: "tab_permissions", Icon: ShieldCheck,            Component: Permissions },
+      { key: "audit-log",   label_key: "tab_audit_log",   Icon: ClockCounterClockwise,  Component: AuditLog },
     ],
   },
 ];
