@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { api, formatApiError, API } from "../../lib/api";
+import { api, formatApiError, downloadBlob } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import { FileXls, FilePdf } from "@phosphor-icons/react";
@@ -87,27 +87,18 @@ export default function Analytics() {
 
   const exportFile = async (type) => {
     try {
-      const token = localStorage.getItem("token");
       const params = new URLSearchParams();
       if (yearFilter)    params.append("year",       yearFilter);
       if (monthFilter)   params.append("month",      monthFilter);
       if (machineFilter) params.append("machine_id", machineFilter);
       if (specFilter)    params.append("specialty",  specFilter);
-      const url = `${API}/analytics/maintenance/export/${type}?${params}`;
-      const res = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = `analytics_${yearFilter || "all"}_${monthFilter || "all"}.${type === "excel" ? "xlsx" : "pdf"}`;
-      a.click();
-      URL.revokeObjectURL(href);
+      const ext = type === "excel" ? "xlsx" : "pdf";
+      await downloadBlob(
+        `/analytics/maintenance/export/${type}?${params}`,
+        `analytics_${yearFilter || "all"}_${monthFilter || "all"}.${ext}`
+      );
       toast.success(ar ? "تم التصدير ✓" : "Exported ✓");
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { toast.error(formatApiError(e)); }
   };
 
   const ov = data?.overview ?? {};

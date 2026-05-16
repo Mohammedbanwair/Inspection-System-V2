@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, formatApiError, API } from "../../lib/api";
+import { api, formatApiError, downloadBlob } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import { Eye, FilePdf, Trash, X, FileXls } from "@phosphor-icons/react";
@@ -133,42 +133,20 @@ export default function Inspections() {
       return;
     }
     try {
-      const token = localStorage.getItem("token");
       const params = new URLSearchParams();
       Object.entries(getApiFilters()).forEach(([k, v]) => { if (v) params.append(k, v); });
-      const res = await fetch(`${API}/inspections/export/excel?${params}`, {
-        headers: { Authorization: `Bearer ${token}` }, credentials: "include",
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Export failed");
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `inspection_${targetNum}_${dateFrom}_${dateTo}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadBlob(
+        `/inspections/export/excel?${params}`,
+        `inspection_${targetNum}_${dateFrom}_${dateTo}.xlsx`
+      );
       toast.success(lang === "ar" ? "تم تصدير Excel ✓" : "Excel exported ✓");
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { toast.error(formatApiError(e)); }
   };
 
   const exportPDF = async (id, num) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API}/inspections/${id}/export/pdf`, {
-        headers: { Authorization: `Bearer ${token}` }, credentials: "include",
-      });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `inspection_${num}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) { toast.error(e.message); }
+      await downloadBlob(`/inspections/${id}/export/pdf`, `inspection_${num}.pdf`);
+    } catch (e) { toast.error(formatApiError(e)); }
   };
 
   const del = async (id) => {

@@ -25,3 +25,13 @@ export function formatApiError(err) {
   if (Array.isArray(d)) return d.map((e) => e?.msg || JSON.stringify(e)).join(" ");
   return String(d);
 }
+
+export async function downloadBlob(path, filename) {
+  const res = await api.get(path, { responseType: "blob" });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}

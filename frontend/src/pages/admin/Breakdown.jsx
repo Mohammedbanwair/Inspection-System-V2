@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatApiError, API } from "../../lib/api";
+import { api, formatApiError, downloadBlob } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import {
@@ -224,24 +224,16 @@ export default function Breakdown() {
       const token = localStorage.getItem("token");
       const params = new URLSearchParams();
       const sel = machines.find((m) => m.id === machineId);
-      if (sel)     params.append("machine_number", sel.number);
+      if (sel)      params.append("machine_number", sel.number);
       if (dateFrom) params.append("date_from", dateFrom);
       if (dateTo)   params.append("date_to", dateTo);
       if (status)   params.append("status", status);
-      const res = await fetch(`${API}/breakdowns/export/excel?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `machine_downtime_${dateFrom || "all"}_${dateTo || "all"}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadBlob(
+        `/breakdowns/export/excel?${params}`,
+        `machine_downtime_${dateFrom || "all"}_${dateTo || "all"}.xlsx`
+      );
       toast.success(ar ? "تم التصدير ✓" : "Exported ✓");
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { toast.error(formatApiError(e)); }
   };
 
   const total    = list.length;

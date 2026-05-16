@@ -24,7 +24,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Respons
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -129,8 +129,8 @@ async def _audit(actor_id: str, actor_name: str, action: str,
             "details": details,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"_audit failed: {e}")
 
 # ── Notification helper ───────────────────────────────────────────
 async def _notify(ntype: str, title_ar: str, body_ar: str, ref_id: str = "") -> None:
@@ -144,8 +144,8 @@ async def _notify(ntype: str, title_ar: str, body_ar: str, ref_id: str = "") -> 
             "is_read": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"_notify failed: {e}")
 
 CATS = ["electrical", "mechanical", "chiller", "panels_main", "panels_sub", "cooling_tower", "preventive"]
 Category = Literal["electrical", "mechanical", "chiller", "panels_main", "panels_sub", "cooling_tower", "preventive"]
@@ -227,48 +227,48 @@ class LoginIn(BaseModel):
 
 
 class UserCreate(BaseModel):
-    employee_number: str
-    password: str
-    name: str
+    employee_number: str = Field(min_length=2, max_length=30)
+    password: str = Field(min_length=6, max_length=128)
+    name: str = Field(min_length=2, max_length=80)
     role: Literal["admin", "technician", "helper"] = "technician"
     specialty: Optional[Literal["electrical", "mechanical"]] = None
 
 
 class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    password: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=2, max_length=80)
+    password: Optional[str] = Field(default=None, min_length=6, max_length=128)
     role: Optional[Literal["admin", "technician", "helper"]] = None
     specialty: Optional[Literal["electrical", "mechanical"]] = None
 
 
 class EntityCreate(BaseModel):
-    number: str
-    name: Optional[str] = ""
+    number: str = Field(min_length=1, max_length=20)
+    name: Optional[str] = Field(default="", max_length=100)
     group: Optional[str] = None
 
 
 class EntityUpdate(BaseModel):
-    number: Optional[str] = None
-    name: Optional[str] = None
+    number: Optional[str] = Field(default=None, min_length=1, max_length=20)
+    name: Optional[str] = Field(default=None, max_length=100)
     group: Optional[str] = None
 
 
 class QuestionCreate(BaseModel):
     category: Category
-    text: str
+    text: str = Field(min_length=3, max_length=300)
     order: int = 0
     answer_type: Literal["yes_no", "numeric"] = "yes_no"
-    unit: Optional[str] = "°C"
-    section: Optional[str] = None
+    unit: Optional[str] = Field(default="°C", max_length=20)
+    section: Optional[str] = Field(default=None, max_length=100)
 
 
 class QuestionUpdate(BaseModel):
     category: Optional[Category] = None
-    text: Optional[str] = None
+    text: Optional[str] = Field(default=None, min_length=3, max_length=300)
     order: Optional[int] = None
     answer_type: Optional[Literal["yes_no", "numeric"]] = None
-    unit: Optional[str] = None
-    section: Optional[str] = None
+    unit: Optional[str] = Field(default=None, max_length=20)
+    section: Optional[str] = Field(default=None, max_length=100)
 
 
 class AnswerIn(BaseModel):
@@ -554,20 +554,20 @@ make_entity_routes("cooling_towers", "برج التبريد", "/cooling-towers")
 
 # ---------- Machines (with group A/B and custom sort_order) ----------
 class MachineCreate(BaseModel):
-    number: str
-    name: Optional[str] = ""
+    number: str = Field(min_length=1, max_length=20)
+    name: Optional[str] = Field(default="", max_length=100)
     group: Literal["A", "B"] = "A"
-    manufacturing_year: Optional[str] = ""
-    serial_number: Optional[str] = ""
-    power_consumption: Optional[str] = ""
+    manufacturing_year: Optional[str] = Field(default="", max_length=10)
+    serial_number: Optional[str] = Field(default="", max_length=50)
+    power_consumption: Optional[str] = Field(default="", max_length=20)
 
 class MachineUpdate(BaseModel):
-    number: Optional[str] = None
-    name: Optional[str] = None
+    number: Optional[str] = Field(default=None, min_length=1, max_length=20)
+    name: Optional[str] = Field(default=None, max_length=100)
     group: Optional[Literal["A", "B"]] = None
-    manufacturing_year: Optional[str] = None
-    serial_number: Optional[str] = None
-    power_consumption: Optional[str] = None
+    manufacturing_year: Optional[str] = Field(default=None, max_length=10)
+    serial_number: Optional[str] = Field(default=None, max_length=50)
+    power_consumption: Optional[str] = Field(default=None, max_length=20)
 
 
 @api.get("/machines")

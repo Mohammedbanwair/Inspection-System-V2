@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { api, formatApiError, API } from "../../lib/api";
+import { api, formatApiError, downloadBlob } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import { Plus, PencilSimple, Trash, DotsSixVertical, FileXls } from "@phosphor-icons/react";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 export default function Machines() {
   const { t, lang } = useI18n();
@@ -17,14 +18,18 @@ export default function Machines() {
   const [serialNumber, setSerialNumber] = useState("");
   const [powerConsumption, setPowerConsumption] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [confirmTarget, setConfirmTarget] = useState(null);
   const dragItem = useRef(null);
   const dragOver = useRef(null);
 
   const load = async () => {
+    setLoading(true);
     try {
       const { data } = await api.get("/machines");
       setList(data);
     } catch (e) { toast.error(formatApiError(e)); }
+    finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
 
@@ -59,29 +64,17 @@ export default function Machines() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const del = async (m) => {
-    if (!window.confirm(t("confirm_delete"))) return;
-    try { await api.delete(`/machines/${m.id}`); toast.success("✓"); load(); }
+  const del = async () => {
+    try { await api.delete(`/machines/${confirmTarget.id}`); toast.success("✓"); load(); }
     catch (err) { toast.error(formatApiError(err)); }
+    finally { setConfirmTarget(null); }
   };
 
   const exportExcel = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API}/machines/export/excel`, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "machines.xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadBlob("/machines/export/excel", "machines.xlsx");
       toast.success(ar ? "تم التصدير ✓" : "Exported ✓");
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { toast.error(formatApiError(e)); }
   };
 
   const onDragStart = (e, idx) => { dragItem.current = idx; e.dataTransfer.effectAllowed = "move"; };
@@ -103,8 +96,20 @@ export default function Machines() {
 
   const filtered = groupFilter === "all" ? list : list.filter((m) => m.group === groupFilter);
 
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
+    </div>
+  );
+
   return (
     <div data-testid="machine-panel">
+      <ConfirmDialog
+        open={!!confirmTarget}
+        message={`${t("confirm_delete")} "${confirmTarget?.number}"؟`}
+        onConfirm={del}
+        onCancel={() => setConfirmTarget(null)}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="text-lg font-bold text-slate-900">{t("tab_machines")} ({filtered.length})</h3>
         <div className="flex items-center gap-2 flex-wrap">
@@ -220,7 +225,7 @@ export default function Machines() {
                             data-testid={`machine-edit-${m.id}`}>
                       <PencilSimple size={14} />
                     </button>
-                    <button onClick={() => del(m)}
+                    <button onClick={() => setConfirmTarget(m)}
                             className="h-9 w-9 border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center"
                             data-testid={`machine-delete-${m.id}`}>
                       <Trash size={14} />
