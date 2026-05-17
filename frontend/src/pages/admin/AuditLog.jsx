@@ -91,12 +91,12 @@ export default function AuditLog() {
         <div className="flex flex-col gap-1">
           <label className="text-xs font-semibold text-slate-500">{t("date_from")}</label>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-            className="h-9 px-2 border border-slate-200 text-sm" />
+            dir="ltr" className="h-9 px-2 border border-slate-200 text-sm" />
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-semibold text-slate-500">{t("date_to")}</label>
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-            className="h-9 px-2 border border-slate-200 text-sm" />
+            dir="ltr" className="h-9 px-2 border border-slate-200 text-sm" />
         </div>
         <button
           onClick={() => fetchLogs(1)}

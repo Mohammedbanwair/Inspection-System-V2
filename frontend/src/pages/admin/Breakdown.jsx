@@ -11,25 +11,40 @@ import {
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 
-function parseTime12h(str) {
-  if (!str) return null;
-  const m = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!m) return null;
-  let h = parseInt(m[1]);
-  const mn = parseInt(m[2]);
-  const ap = m[3].toUpperCase();
-  if (ap === "PM" && h !== 12) h += 12;
-  if (ap === "AM" && h === 12) h = 0;
-  return h * 60 + mn;
-}
-
 function calcDuration(start, end) {
-  const s = parseTime12h(start);
-  const e = parseTime12h(end);
+  if (!start || !end) return "—";
+  // ISO datetime format
+  if (start.includes("T")) {
+    const diff = Math.round((new Date(end) - new Date(start)) / 60000);
+    if (diff <= 0) return "—";
+    return `${Math.floor(diff / 60)}h ${String(diff % 60).padStart(2, "0")}m`;
+  }
+  // Legacy 12h format
+  const _p = (s) => {
+    const m = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!m) return null;
+    let h = parseInt(m[1]);
+    const mn = parseInt(m[2]);
+    const ap = m[3].toUpperCase();
+    if (ap === "PM" && h !== 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    return h * 60 + mn;
+  };
+  const s = _p(start), e = _p(end);
   if (s === null || e === null) return "—";
   let diff = e - s;
   if (diff < 0) diff += 1440;
   return `${Math.floor(diff / 60)}h ${String(diff % 60).padStart(2, "0")}m`;
+}
+
+function fmtStartEnd(str) {
+  if (!str) return "—";
+  if (str.includes("T")) {
+    const [date, time] = str.split("T");
+    const [, mo, dy] = date.split("-");
+    return `${dy}/${mo} ${time.slice(0, 5)}`;
+  }
+  return str;
 }
 
 function SpecialtyBadge({ specialty, ar }) {
@@ -363,9 +378,9 @@ export default function Breakdown() {
             ))}
           </select>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                 className="h-11 px-3 border border-slate-200" />
+                 dir="ltr" className="h-11 px-3 border border-slate-200" />
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                 className="h-11 px-3 border border-slate-200" />
+                 dir="ltr" className="h-11 px-3 border border-slate-200" />
           <select value={status} onChange={(e) => setStatus(e.target.value)}
                   className="h-11 px-3 border border-slate-200 bg-white">
             <option value="">{t("all_statuses")}</option>
@@ -440,8 +455,8 @@ export default function Breakdown() {
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-3 font-mono text-xs">{b.start_time || "—"}</td>
-                <td className="px-4 py-3 font-mono text-xs">{b.end_time || "—"}</td>
+                <td className="px-4 py-3 font-mono text-xs" dir="ltr">{fmtStartEnd(b.start_time)}</td>
+                <td className="px-4 py-3 font-mono text-xs" dir="ltr">{fmtStartEnd(b.end_time)}</td>
                 <td className="px-4 py-3">
                   <span className="px-2 py-1 text-xs font-bold bg-[#EDE0ED] text-[#6B2D6B]">
                     {calcDuration(b.start_time, b.end_time)}

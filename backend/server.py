@@ -1984,7 +1984,20 @@ async def delete_preventive_plan(pid: str, _=Depends(require_admin)):
 
 
 def _calc_duration(start_str: str, end_str: str) -> str:
-    """Parse 12h time strings (e.g. '10:30 PM') and return duration like '4h 30m'."""
+    """Parse time/datetime strings and return duration like '4h 30m'."""
+    if not start_str or not end_str: return "—"
+    # ISO datetime format (datetime-local input)
+    if "T" in str(start_str):
+        try:
+            from datetime import datetime as _dt2
+            s2 = _dt2.strptime(start_str[:16], "%Y-%m-%dT%H:%M")
+            e2 = _dt2.strptime(end_str[:16], "%Y-%m-%dT%H:%M")
+            diff2 = int((e2 - s2).total_seconds() / 60)
+            if diff2 <= 0: return "—"
+            return f"{diff2 // 60}h {diff2 % 60:02d}m"
+        except Exception:
+            return "—"
+    # Legacy 12h time format (e.g. '10:30 PM')
     import re as _re
     def _p(s):
         if not s: return None
@@ -1997,7 +2010,7 @@ def _calc_duration(start_str: str, end_str: str) -> str:
     s, e = _p(start_str), _p(end_str)
     if s is None or e is None: return "—"
     diff = e - s
-    if diff < 0: diff += 1440  # cross-midnight (max 24h shift)
+    if diff < 0: diff += 1440
     return f"{diff // 60}h {diff % 60:02d}m"
 
 
@@ -2637,7 +2650,18 @@ async def delete_mdb_reading(rid: str, _=Depends(require_admin)):
 # ═══════════════════════════════════════════════════════════════
 
 def _calc_duration_minutes(start_str: str, end_str: str) -> int:
-    """Return duration in minutes between two 12-hour time strings, or 0."""
+    """Return duration in minutes between two time/datetime strings, or 0."""
+    if not start_str or not end_str: return 0
+    # ISO datetime format
+    if "T" in str(start_str):
+        try:
+            from datetime import datetime as _dt2
+            s2 = _dt2.strptime(start_str[:16], "%Y-%m-%dT%H:%M")
+            e2 = _dt2.strptime(end_str[:16], "%Y-%m-%dT%H:%M")
+            return max(0, int((e2 - s2).total_seconds() / 60))
+        except Exception:
+            return 0
+    # Legacy 12h time format
     import re as _re
     def _p(s):
         if not s: return None
@@ -2654,26 +2678,61 @@ def _calc_duration_minutes(start_str: str, end_str: str) -> int:
     return diff
 
 
+def _count_working_days(date_from: str, date_to: str) -> int:
+    """Count days excluding Fridays (factory: 6 days/week, 24h/day, no Friday)."""
+    from datetime import date as _date, timedelta as _td
+    try:
+        d = _date.fromisoformat(date_from[:10])
+        end = _date.fromisoformat(date_to[:10])
+    except (ValueError, TypeError):
+        return 0
+    count = 0
+    while d <= end:
+        if d.weekday() != 4:  # 4 = Friday in Python
+            count += 1
+        d += _td(days=1)
+    return count
+
+
 @api.get("/analytics/maintenance")
 async def get_maintenance_analytics(
     year: Optional[int] = None,
     month: Optional[int] = None,
     machine_id: Optional[str] = None,
     specialty: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     _=Depends(require_admin),
 ):
+    import calendar as _cal
     now = datetime.now(timezone.utc)
     eff_year = year or now.year
 
-    # Build query for the filtered period
+    # Build query and determine period for planned-hours calculation
     q: dict = {}
-    if year and month:
+    if date_from and date_to:
+        q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
+        period_start, period_end = date_from[:10], date_to[:10]
+    elif date_from:
+        q["created_at"] = {"$gte": date_from}
+        period_start, period_end = date_from[:10], now.strftime("%Y-%m-%d")
+    elif year and month:
         nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
         q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
+        last_day = _cal.monthrange(eff_year, month)[1]
+        period_start = f"{eff_year:04d}-{month:02d}-01"
+        period_end = f"{eff_year:04d}-{month:02d}-{last_day:02d}"
     elif year:
         q["created_at"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
+        period_start = f"{eff_year:04d}-01-01"
+        period_end = f"{eff_year:04d}-12-31"
+    else:
+        period_start = f"{now.year:04d}-01-01"
+        period_end = now.strftime("%Y-%m-%d")
     if machine_id:
         q["machine_id"] = machine_id
+
+    planned_hours = _count_working_days(period_start, period_end) * 24
 
     all_docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
 
@@ -2693,15 +2752,28 @@ async def get_maintenance_analytics(
     has_dur = [d for d in all_docs if d["_minutes"] > 0]
     mttr_min = (sum(d["_minutes"] for d in has_dur) / len(has_dur)) if has_dur else 0
 
-    # MTBF estimate
-    if total_breakdowns > 1:
-        try:
-            dt1 = datetime.fromisoformat(all_docs[0]["created_at"].replace("Z", "+00:00"))
-            dt2 = datetime.fromisoformat(all_docs[-1]["created_at"].replace("Z", "+00:00"))
-            period_h = max((dt2 - dt1).total_seconds() / 3600, 1.0)
-        except Exception:
-            period_h = 720.0
-        mtbf_h = (period_h - total_minutes / 60) / total_breakdowns
+    # N/A-stopped machine-days: any daily inspection where ALL answers are N/A
+    na_q: dict = {
+        "target_type": "machine",
+        "category": {"$in": ["electrical", "mechanical"]},
+        "answers": {"$not": {"$elemMatch": {"a": {"$ne": None}}}},
+        "answers.0": {"$exists": True},
+    }
+    if q.get("created_at"):
+        na_q["created_at"] = q["created_at"]
+    if machine_id:
+        na_q["target_id"] = machine_id
+    na_docs = await db.inspections.find(
+        na_q, {"_id": 0, "target_id": 1, "created_at": 1}
+    ).to_list(5000)
+    na_stopped_days = len({(d["target_id"], d["created_at"][:10]) for d in na_docs})
+    na_downtime_h = na_stopped_days * 24
+    breakdown_downtime_h = round(total_minutes / 60, 1)
+    total_effective_downtime_h = round(breakdown_downtime_h + na_downtime_h, 1)
+
+    # MTBF using planned working hours (24h/day, no Fridays)
+    if total_breakdowns > 0 and planned_hours > 0:
+        mtbf_h = max((planned_hours - total_effective_downtime_h) / total_breakdowns, 0.0)
     else:
         mtbf_h = 0.0
 
@@ -2776,21 +2848,25 @@ async def get_maintenance_analytics(
             "pm_count": pm_by_ym.get(ym_key, 0),
         })
 
-    mttr_h = mttr_min / 60
-    mtbf_h_safe = max(mtbf_h, 0)
-    availability_pct = round((mtbf_h_safe / (mtbf_h_safe + mttr_h)) * 100, 1) if (mtbf_h_safe + mttr_h) > 0 else 0.0
+    # Availability = (planned - total_downtime) / planned × 100
+    if planned_hours > 0:
+        availability_pct = round(max(0.0, (planned_hours - total_effective_downtime_h) / planned_hours) * 100, 1)
+    else:
+        availability_pct = 0.0
 
     return {
         "overview": {
             "total_breakdowns": total_breakdowns,
-            "total_downtime_hours": round(total_minutes / 60, 1),
+            "total_downtime_hours": total_effective_downtime_h,
             "mttr_minutes": round(mttr_min, 1),
-            "mtbf_hours": round(mtbf_h_safe, 1),
+            "mtbf_hours": round(mtbf_h, 1),
             "availability_pct": availability_pct,
             "electrical_count": len(elec_docs),
             "mechanical_count": len(mech_docs),
             "most_failed_machine": most_failed,
             "pm_count": pm_total,
+            "na_stopped_days": na_stopped_days,
+            "planned_hours": planned_hours,
         },
         "monthly_trend": trend,
         "by_machine": by_machine,
@@ -2809,13 +2885,19 @@ async def export_analytics_excel(
     month: Optional[int] = None,
     machine_id: Optional[str] = None,
     specialty: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     _=Depends(require_admin),
 ):
     _rl_check_export(request.client.host)
     now = datetime.now(timezone.utc)
     eff_year = year or now.year
     q: dict = {}
-    if year and month:
+    if date_from and date_to:
+        q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
+    elif date_from:
+        q["created_at"] = {"$gte": date_from}
+    elif year and month:
         nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
         q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
     elif year:
@@ -2945,12 +3027,18 @@ async def export_analytics_pdf(
     month: Optional[int] = None,
     machine_id: Optional[str] = None,
     specialty: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     _=Depends(require_admin),
 ):
     now = datetime.now(timezone.utc)
     eff_year = year or now.year
     q: dict = {}
-    if year and month:
+    if date_from and date_to:
+        q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
+    elif date_from:
+        q["created_at"] = {"$gte": date_from}
+    elif year and month:
         nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
         q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
     elif year:

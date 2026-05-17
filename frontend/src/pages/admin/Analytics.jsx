@@ -61,6 +61,8 @@ export default function Analytics() {
   const [monthFilter,   setMonthFilter]   = useState("");
   const [machineFilter, setMachineFilter] = useState("");
   const [specFilter,    setSpecFilter]    = useState("");
+  const [dateFrom,      setDateFrom]      = useState("");
+  const [dateTo,        setDateTo]        = useState("");
   const [machines,      setMachines]      = useState([]);
   const [data,          setData]          = useState(null);
   const [loading,       setLoading]       = useState(false);
@@ -73,29 +75,41 @@ export default function Analytics() {
     setLoading(true);
     try {
       const params = {};
-      if (yearFilter)    params.year      = Number(yearFilter);
-      if (monthFilter)   params.month     = Number(monthFilter);
+      // date range takes priority over year/month dropdowns
+      if (dateFrom && dateTo) {
+        params.date_from = dateFrom;
+        params.date_to   = dateTo;
+      } else {
+        if (yearFilter)  params.year  = Number(yearFilter);
+        if (monthFilter) params.month = Number(monthFilter);
+      }
       if (machineFilter) params.machine_id = machineFilter;
       if (specFilter)    params.specialty  = specFilter;
       const { data: res } = await api.get("/analytics/maintenance", { params });
       setData(res);
     } catch (e) { toast.error(formatApiError(e)); }
     finally { setLoading(false); }
-  }, [yearFilter, monthFilter, machineFilter, specFilter]);
+  }, [yearFilter, monthFilter, machineFilter, specFilter, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
 
   const exportFile = async (type) => {
     try {
       const params = new URLSearchParams();
-      if (yearFilter)    params.append("year",       yearFilter);
-      if (monthFilter)   params.append("month",      monthFilter);
+      if (dateFrom && dateTo) {
+        params.append("date_from", dateFrom);
+        params.append("date_to",   dateTo);
+      } else {
+        if (yearFilter)  params.append("year",  yearFilter);
+        if (monthFilter) params.append("month", monthFilter);
+      }
       if (machineFilter) params.append("machine_id", machineFilter);
       if (specFilter)    params.append("specialty",  specFilter);
       const ext = type === "excel" ? "xlsx" : "pdf";
+      const label = dateFrom ? `${dateFrom}_${dateTo}` : `${yearFilter || "all"}_${monthFilter || "all"}`;
       await downloadBlob(
         `/analytics/maintenance/export/${type}?${params}`,
-        `analytics_${yearFilter || "all"}_${monthFilter || "all"}.${ext}`
+        `analytics_${label}.${ext}`
       );
       toast.success(ar ? "تم التصدير ✓" : "Exported ✓");
     } catch (e) { toast.error(formatApiError(e)); }
@@ -116,15 +130,16 @@ export default function Analytics() {
   return (
     <div data-testid="analytics-panel">
       {/* Filters */}
-      <div className="bg-white border border-slate-200 p-4 sm:p-5 mb-5">
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-5 gap-3">
-          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}
+      <div className="bg-white border border-slate-200 p-4 sm:p-5 mb-5 space-y-3">
+        {/* Row 1: Year / Month / Machine / Specialty */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <select value={yearFilter} onChange={(e) => { setYearFilter(e.target.value); setDateFrom(""); setDateTo(""); }}
                   className="h-11 px-3 border border-slate-200 bg-white text-sm">
             <option value="">{t("all_years")}</option>
             {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
 
-          <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}
+          <select value={monthFilter} onChange={(e) => { setMonthFilter(e.target.value); setDateFrom(""); setDateTo(""); }}
                   className="h-11 px-3 border border-slate-200 bg-white text-sm">
             <option value="">{t("all_months")}</option>
             {monthNames.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
@@ -142,19 +157,40 @@ export default function Analytics() {
             <option value="electrical">{ar ? "كهربائي" : "Electrical"}</option>
             <option value="mechanical">{ar ? "ميكانيكي" : "Mechanical"}</option>
           </select>
+        </div>
 
-          <div className="flex gap-2 col-span-2 sm:col-span-1 md:col-span-1">
-            <button onClick={() => exportFile("excel")}
-                    className="flex-1 h-11 bg-[#1D6F42] text-white font-semibold flex items-center justify-center gap-1.5 hover:bg-[#155734] text-sm">
-              <FileXls size={15} weight="bold" />
-              <span className="hidden sm:inline">Excel</span>
-            </button>
-            <button onClick={() => exportFile("pdf")}
-                    className="flex-1 h-11 bg-red-700 text-white font-semibold flex items-center justify-center gap-1.5 hover:bg-red-800 text-sm">
-              <FilePdf size={15} weight="bold" />
-              <span className="hidden sm:inline">PDF</span>
-            </button>
-          </div>
+        {/* Row 2: Custom date range + export */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => { setDateFrom(e.target.value); setYearFilter(""); setMonthFilter(""); }}
+            placeholder={t("date_from")}
+            dir="ltr"
+            className="h-11 px-3 border border-slate-200 text-sm"
+          />
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => { setDateTo(e.target.value); setYearFilter(""); setMonthFilter(""); }}
+            placeholder={t("date_to")}
+            dir="ltr"
+            className="h-11 px-3 border border-slate-200 text-sm"
+          />
+          <button
+            onClick={() => exportFile("excel")}
+            className="h-11 bg-[#1D6F42] text-white font-semibold flex items-center justify-center gap-1.5 hover:bg-[#155734] text-sm"
+          >
+            <FileXls size={15} weight="bold" />
+            <span>Excel</span>
+          </button>
+          <button
+            onClick={() => exportFile("pdf")}
+            className="h-11 bg-red-700 text-white font-semibold flex items-center justify-center gap-1.5 hover:bg-red-800 text-sm"
+          >
+            <FilePdf size={15} weight="bold" />
+            <span>PDF</span>
+          </button>
         </div>
       </div>
 
@@ -167,15 +203,18 @@ export default function Analytics() {
       {!loading && data && (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-5">
             <KpiCard label={t("kpi_total_breakdowns")} value={ov.total_breakdowns ?? 0} accent={PURPLE} />
             <KpiCard label={t("kpi_pm_count")}         value={ov.pm_count ?? 0} accent={PM_CLR} />
+            <KpiCard label={t("kpi_na_stopped")}       value={ov.na_stopped_days ?? 0}
+                     sub={ar ? "أيام توقف (فحص N/A)" : "stopped days (N/A inspection)"}
+                     accent={ov.na_stopped_days > 0 ? "#EF4444" : undefined} />
             <KpiCard label={t("kpi_downtime_hours")}   value={`${ov.total_downtime_hours ?? 0}h`} />
             <KpiCard label={t("kpi_mttr")}             value={fmtMttr(ov.mttr_minutes)} sub="Mean Time To Repair" />
             <KpiCard label={t("kpi_mtbf")}             value={ov.mtbf_hours ? `${ov.mtbf_hours}h` : "—"} sub="Mean Time Between Failures" />
             <KpiCard label={t("kpi_availability")}
                      value={ov.availability_pct != null && ov.availability_pct > 0 ? `${ov.availability_pct}%` : "—"}
-                     sub="Availability = MTBF/(MTBF+MTTR)"
+                     sub={ov.planned_hours ? `${ov.planned_hours}h planned` : "Availability"}
                      accent={ov.availability_pct >= 95 ? "#10B981" : ov.availability_pct >= 80 ? "#F59E0B" : ov.availability_pct > 0 ? "#EF4444" : undefined} />
             <KpiCard label={t("kpi_most_failed")}      value={ov.most_failed_machine || "—"} accent={PURPLE}
                      sub={ar ? "أعلى عدد تعطلات" : "highest failure count"} />

@@ -447,6 +447,7 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
               type="time"
               value={timeMcReceived}
               onChange={(e) => { setTimeMcReceived(e.target.value); setIsDirty(true); }}
+              dir="ltr"
               className="w-full h-12 mt-2 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE] text-lg"
               data-testid="time-mc-received"
             />
@@ -459,6 +460,7 @@ export default function InspectionForm({ branch, editInspection, onBack, onSubmi
               type="time"
               value={timeDelivered}
               onChange={(e) => { setTimeDelivered(e.target.value); setIsDirty(true); }}
+              dir="ltr"
               className="w-full h-12 mt-2 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE] text-lg"
               data-testid="time-delivered"
             />

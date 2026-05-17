@@ -89,6 +89,7 @@ export default function PreventivePlan() {
           type="date"
           value={filterDate}
           onChange={(e) => setFilterDate(e.target.value)}
+          dir="ltr"
           className="h-10 px-3 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
         />
         <button
@@ -124,6 +125,7 @@ export default function PreventivePlan() {
             type="date"
             value={form.scheduled_date}
             onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })}
+            dir="ltr"
             className="h-12 px-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#005CBE]"
             data-testid="plan-date-input"
           />
