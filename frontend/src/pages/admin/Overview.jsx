@@ -4,13 +4,8 @@ import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import {
   ClipboardText, Wrench, CalendarCheck,
-  Snowflake, ListChecks, WarningOctagon, Lightning,
+  Snowflake, ListChecks, Lightning,
 } from "@phosphor-icons/react";
-
-const CAT_KEY = {
-  electrical: "cat_electrical", mechanical: "cat_mechanical",
-  chiller: "cat_chiller", panels: "cat_panels",
-};
 
 function Stat({ icon: Icon, label, value, accent, testid }) {
   return (
@@ -39,28 +34,22 @@ export default function Overview() {
   const { t, lang } = useI18n();
   const ar = lang === "ar";
   const [stats, setStats] = useState(null);
-  const [openFails, setOpenFails] = useState([]);
   const [monthly, setMonthly] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const [s, f, m] = await Promise.all([
+        const [s, m] = await Promise.all([
           api.get("/stats/overview"),
-          api.get("/failures/open"),
           api.get("/stats/monthly-breakdown"),
         ]);
         setStats(s.data);
-        setOpenFails(f.data);
         setMonthly(m.data);
       } catch (e) { toast.error(formatApiError(e)); }
       finally { setLoading(false); }
     })();
   }, []);
-
-  const catLabel = (c) => t(CAT_KEY[c] || "cat_electrical");
-  const typeLabel = (tt) => t(tt === "machine" ? "machine" : tt === "chiller" ? "chiller" : "panel");
 
   if (loading) return (
     <div className="flex items-center justify-center py-20">
@@ -162,49 +151,6 @@ export default function Overview() {
         )}
       </div>
 
-      {/* Open Failures Table */}
-      <div>
-        <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
-          <WarningOctagon size={20} weight="bold" className="text-red-500" />
-          {t("open_failures")} ({openFails.length})
-        </h3>
-        <div className="bg-white border border-slate-200 overflow-x-auto">
-          <table className="w-full text-sm min-w-[560px]">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="text-start px-4 py-3 font-semibold">{t("type")}</th>
-                <th className="text-start px-4 py-3 font-semibold">{t("target_number")}</th>
-                <th className="text-start px-4 py-3 font-semibold">{t("section")}</th>
-                <th className="text-start px-4 py-3 font-semibold">{t("question")}</th>
-                <th className="text-start px-4 py-3 font-semibold">{t("reported_by")}</th>
-                <th className="text-start px-4 py-3 font-semibold">{t("since")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {openFails.length === 0 && (
-                <tr><td colSpan="6" className="text-center text-emerald-700 py-8 font-semibold bg-emerald-50/40">
-                  ✓ {t("no_open_failures")}
-                </td></tr>
-              )}
-              {openFails.map((f, i) => (
-                <tr key={`${f.target_id}-${f.question_id}`} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
-                  <td className="px-4 py-3">{typeLabel(f.target_type)}</td>
-                  <td className="px-4 py-3 font-semibold">{f.target_number}</td>
-                  <td className="px-4 py-3">{catLabel(f.category)}</td>
-                  <td className="px-4 py-3">
-                    <div>{f.question_text}</div>
-                    {f.note && <div className="text-xs text-slate-500 mt-1">{t("notes")}: {f.note}</div>}
-                  </td>
-                  <td className="px-4 py-3">{f.technician_name}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">
-                    {new Date(f.since).toLocaleString(ar ? "ar-EG" : "en-US")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }
