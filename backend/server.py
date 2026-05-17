@@ -2697,15 +2697,32 @@ async def get_maintenance_analytics(
     q: dict = {}
     if date_from and date_to:
         q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
+        _p_start, _p_end = date_from[:10], date_to[:10]
     elif date_from:
         q["created_at"] = {"$gte": date_from}
+        _p_start, _p_end = date_from[:10], now.strftime("%Y-%m-%d")
     elif year and month:
+        import calendar as _cal
         nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
         q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
+        last_day = _cal.monthrange(eff_year, month)[1]
+        _p_start = f"{eff_year:04d}-{month:02d}-01"
+        _p_end   = f"{eff_year:04d}-{month:02d}-{last_day:02d}"
     elif year:
         q["created_at"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
+        _p_start, _p_end = f"{eff_year:04d}-01-01", f"{eff_year:04d}-12-31"
+    else:
+        _p_start = f"{now.year:04d}-01-01"
+        _p_end   = now.strftime("%Y-%m-%d")
     if machine_id:
         q["machine_id"] = machine_id
+
+    # Fallback period in hours (used when only 1 breakdown exists)
+    try:
+        from datetime import date as _date
+        _fallback_h = max((_date.fromisoformat(_p_end) - _date.fromisoformat(_p_start)).days * 24, 24.0)
+    except Exception:
+        _fallback_h = 720.0
 
     all_docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
 
@@ -2725,15 +2742,18 @@ async def get_maintenance_analytics(
     has_dur = [d for d in all_docs if d["_minutes"] > 0]
     mttr_min = (sum(d["_minutes"] for d in has_dur) / len(has_dur)) if has_dur else 0
 
-    # MTBF estimate (first-to-last breakdown period)
-    if total_breakdowns > 1:
-        try:
-            dt1 = datetime.fromisoformat(all_docs[0]["created_at"].replace("Z", "+00:00"))
-            dt2 = datetime.fromisoformat(all_docs[-1]["created_at"].replace("Z", "+00:00"))
-            period_h = max((dt2 - dt1).total_seconds() / 3600, 1.0)
-        except Exception:
-            period_h = 720.0
-        mtbf_h = (period_h - total_minutes / 60) / total_breakdowns
+    # MTBF: use first-to-last breakdown period when >1, else use filter period
+    if total_breakdowns >= 1:
+        if total_breakdowns > 1:
+            try:
+                dt1 = datetime.fromisoformat(all_docs[0]["created_at"].replace("Z", "+00:00"))
+                dt2 = datetime.fromisoformat(all_docs[-1]["created_at"].replace("Z", "+00:00"))
+                period_h = max((dt2 - dt1).total_seconds() / 3600, 1.0)
+            except Exception:
+                period_h = _fallback_h
+        else:
+            period_h = _fallback_h  # single breakdown → use selected filter period
+        mtbf_h = max((period_h - total_minutes / 60) / total_breakdowns, 0.0)
     else:
         mtbf_h = 0.0
 
