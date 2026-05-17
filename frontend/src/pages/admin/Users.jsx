@@ -11,15 +11,18 @@ export default function Users() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmTarget, setConfirmTarget] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     employee_number: "", name: "", password: "", role: "technician", specialty: "electrical",
   });
 
   const load = async () => {
+    setLoading(true);
     try {
       const { data } = await api.get("/users");
       setList(data);
     } catch (e) { toast.error(formatApiError(e)); }
+    finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
 
@@ -68,6 +71,12 @@ export default function Users() {
 
   const isTech = form.role === "technician";
   const isHelper = form.role === "helper";
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
+    </div>
+  );
 
   return (
     <div data-testid="users-panel">

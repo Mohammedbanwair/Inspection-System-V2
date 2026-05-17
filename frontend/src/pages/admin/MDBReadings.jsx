@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatApiError, API } from "../../lib/api";
+import { api, formatApiError, downloadBlob } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import { Trash, FileXls, FilePdf, Image, X } from "@phosphor-icons/react";
@@ -49,26 +49,17 @@ export default function MDBReadings() {
 
   const exportFile = async (type) => {
     try {
-      const token = localStorage.getItem("token");
       const params = new URLSearchParams();
       if (panelFilter) params.append("panel_number", panelFilter);
       if (dateFrom) params.append("date_from", dateFrom);
       if (dateTo)   params.append("date_to",   dateTo);
-      const url = `${API}/mdb-readings/export/${type}?${params}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = `mdb_readings_${dateFrom || "all"}_${dateTo || "all"}.${type === "excel" ? "xlsx" : "pdf"}`;
-      a.click();
-      URL.revokeObjectURL(href);
+      const ext = type === "excel" ? "xlsx" : "pdf";
+      await downloadBlob(
+        `/mdb-readings/export/${type}?${params}`,
+        `mdb_readings_${dateFrom || "all"}_${dateTo || "all"}.${ext}`
+      );
       toast.success(ar ? "تم التصدير ✓" : "Exported ✓");
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { toast.error(formatApiError(e)); }
   };
 
   const uniquePanels = [...new Set(list.map((r) => r.panel_number))].sort();
