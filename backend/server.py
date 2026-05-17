@@ -2678,20 +2678,6 @@ def _calc_duration_minutes(start_str: str, end_str: str) -> int:
     return diff
 
 
-def _count_working_days(date_from: str, date_to: str) -> int:
-    """Count days excluding Fridays (factory: 6 days/week, 24h/day, no Friday)."""
-    from datetime import date as _date, timedelta as _td
-    try:
-        d = _date.fromisoformat(date_from[:10])
-        end = _date.fromisoformat(date_to[:10])
-    except (ValueError, TypeError):
-        return 0
-    count = 0
-    while d <= end:
-        if d.weekday() != 4:  # 4 = Friday in Python
-            count += 1
-        d += _td(days=1)
-    return count
 
 
 @api.get("/analytics/maintenance")
@@ -2704,35 +2690,22 @@ async def get_maintenance_analytics(
     date_to: Optional[str] = None,
     _=Depends(require_admin),
 ):
-    import calendar as _cal
     now = datetime.now(timezone.utc)
     eff_year = year or now.year
 
-    # Build query and determine period for planned-hours calculation
+    # Build query for the filtered period
     q: dict = {}
     if date_from and date_to:
         q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
-        period_start, period_end = date_from[:10], date_to[:10]
     elif date_from:
         q["created_at"] = {"$gte": date_from}
-        period_start, period_end = date_from[:10], now.strftime("%Y-%m-%d")
     elif year and month:
         nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
         q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
-        last_day = _cal.monthrange(eff_year, month)[1]
-        period_start = f"{eff_year:04d}-{month:02d}-01"
-        period_end = f"{eff_year:04d}-{month:02d}-{last_day:02d}"
     elif year:
         q["created_at"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
-        period_start = f"{eff_year:04d}-01-01"
-        period_end = f"{eff_year:04d}-12-31"
-    else:
-        period_start = f"{now.year:04d}-01-01"
-        period_end = now.strftime("%Y-%m-%d")
     if machine_id:
         q["machine_id"] = machine_id
-
-    planned_hours = _count_working_days(period_start, period_end) * 24
 
     all_docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
 
@@ -2752,28 +2725,15 @@ async def get_maintenance_analytics(
     has_dur = [d for d in all_docs if d["_minutes"] > 0]
     mttr_min = (sum(d["_minutes"] for d in has_dur) / len(has_dur)) if has_dur else 0
 
-    # N/A-stopped machine-days: any daily inspection where ALL answers are N/A
-    na_q: dict = {
-        "target_type": "machine",
-        "category": {"$in": ["electrical", "mechanical"]},
-        "answers": {"$not": {"$elemMatch": {"a": {"$ne": None}}}},
-        "answers.0": {"$exists": True},
-    }
-    if q.get("created_at"):
-        na_q["created_at"] = q["created_at"]
-    if machine_id:
-        na_q["target_id"] = machine_id
-    na_docs = await db.inspections.find(
-        na_q, {"_id": 0, "target_id": 1, "created_at": 1}
-    ).to_list(5000)
-    na_stopped_days = len({(d["target_id"], d["created_at"][:10]) for d in na_docs})
-    na_downtime_h = na_stopped_days * 24
-    breakdown_downtime_h = round(total_minutes / 60, 1)
-    total_effective_downtime_h = round(breakdown_downtime_h + na_downtime_h, 1)
-
-    # MTBF using planned working hours (24h/day, no Fridays)
-    if total_breakdowns > 0 and planned_hours > 0:
-        mtbf_h = max((planned_hours - total_effective_downtime_h) / total_breakdowns, 0.0)
+    # MTBF estimate (first-to-last breakdown period)
+    if total_breakdowns > 1:
+        try:
+            dt1 = datetime.fromisoformat(all_docs[0]["created_at"].replace("Z", "+00:00"))
+            dt2 = datetime.fromisoformat(all_docs[-1]["created_at"].replace("Z", "+00:00"))
+            period_h = max((dt2 - dt1).total_seconds() / 3600, 1.0)
+        except Exception:
+            period_h = 720.0
+        mtbf_h = (period_h - total_minutes / 60) / total_breakdowns
     else:
         mtbf_h = 0.0
 
@@ -2848,25 +2808,21 @@ async def get_maintenance_analytics(
             "pm_count": pm_by_ym.get(ym_key, 0),
         })
 
-    # Availability = (planned - total_downtime) / planned × 100
-    if planned_hours > 0:
-        availability_pct = round(max(0.0, (planned_hours - total_effective_downtime_h) / planned_hours) * 100, 1)
-    else:
-        availability_pct = 0.0
+    mttr_h = mttr_min / 60
+    mtbf_h_safe = max(mtbf_h, 0)
+    availability_pct = round((mtbf_h_safe / (mtbf_h_safe + mttr_h)) * 100, 1) if (mtbf_h_safe + mttr_h) > 0 else 0.0
 
     return {
         "overview": {
             "total_breakdowns": total_breakdowns,
-            "total_downtime_hours": total_effective_downtime_h,
+            "total_downtime_hours": round(total_minutes / 60, 1),
             "mttr_minutes": round(mttr_min, 1),
-            "mtbf_hours": round(mtbf_h, 1),
+            "mtbf_hours": round(mtbf_h_safe, 1),
             "availability_pct": availability_pct,
             "electrical_count": len(elec_docs),
             "mechanical_count": len(mech_docs),
             "most_failed_machine": most_failed,
             "pm_count": pm_total,
-            "na_stopped_days": na_stopped_days,
-            "planned_hours": planned_hours,
         },
         "monthly_trend": trend,
         "by_machine": by_machine,
