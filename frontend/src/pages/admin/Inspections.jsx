@@ -243,11 +243,13 @@ export default function Inspections() {
           <input type="date" value={dateFrom}
                  onChange={e => setDateFrom(e.target.value)}
                  disabled={!spec}
+                 dir="ltr"
                  className="h-11 px-3 border border-slate-200 disabled:opacity-40"
                  data-testid="filter-date-from" />
           <input type="date" value={dateTo}
                  onChange={e => setDateTo(e.target.value)}
                  disabled={!spec}
+                 dir="ltr"
                  className="h-11 px-3 border border-slate-200 disabled:opacity-40"
                  data-testid="filter-date-to" />
           <button type="submit" disabled={!spec}

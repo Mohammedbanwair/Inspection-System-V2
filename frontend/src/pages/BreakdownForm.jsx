@@ -5,62 +5,17 @@ import { useI18n } from "../lib/i18n";
 import { useAuth } from "../context/AuthContext";
 import { ArrowLeft, ArrowRight, CheckCircle, Timer } from "@phosphor-icons/react";
 
-function parseTime12h(str) {
-  if (!str) return null;
-  const m = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!m) return null;
-  let h = parseInt(m[1]);
-  const mn = parseInt(m[2]);
-  const ap = m[3].toUpperCase();
-  if (ap === "PM" && h !== 12) h += 12;
-  if (ap === "AM" && h === 12) h = 0;
-  return h * 60 + mn;
-}
-
 function calcDuration(start, end) {
-  const s = parseTime12h(start);
-  const e = parseTime12h(end);
-  if (s === null || e === null) return null;
-  let diff = e - s;
-  if (diff < 0) diff += 1440;
+  if (!start || !end) return null;
+  const diff = Math.round((new Date(end) - new Date(start)) / 60000);
+  if (diff <= 0) return null;
   return `${Math.floor(diff / 60)}h ${String(diff % 60).padStart(2, "0")}m`;
 }
 
-function TimePicker({ label, onChange }) {
-  const [h, setH] = useState("06");
-  const [m, setM] = useState("00");
-  const [ampm, setAmpm] = useState("AM");
-
-  useEffect(() => {
-    onChange(`${h}:${m} ${ampm}`);
-    // eslint-disable-next-line
-  }, [h, m, ampm]);
-
-  const hours = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
-  const mins = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
-
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
-        {label}
-      </label>
-      <div className="flex gap-1">
-        <select value={h} onChange={(e) => setH(e.target.value)}
-                className="flex-1 h-11 px-2 border border-slate-200 text-sm bg-white">
-          {hours.map((n) => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <select value={m} onChange={(e) => setM(e.target.value)}
-                className="flex-1 h-11 px-2 border border-slate-200 text-sm bg-white">
-          {mins.map((n) => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <select value={ampm} onChange={(e) => setAmpm(e.target.value)}
-                className="w-20 h-11 px-2 border border-slate-200 text-sm bg-white font-semibold">
-          <option value="AM">AM</option>
-          <option value="PM">PM</option>
-        </select>
-      </div>
-    </div>
-  );
+function localISONow() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
 export default function BreakdownForm({ onBack, onSubmitted }) {
@@ -75,8 +30,8 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
   const [problem, setProblem] = useState("");
   const [otherDesc, setOtherDesc] = useState("");
   const [repairDesc, setRepairDesc] = useState("");
-  const [startTime, setStartTime] = useState("06:00 AM");
-  const [endTime, setEndTime] = useState("06:00 AM");
+  const [startTime, setStartTime] = useState(localISONow);
+  const [endTime, setEndTime] = useState(localISONow);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -206,8 +161,30 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
         {/* Times + duration preview */}
         <div className="bg-white border border-slate-200 p-4 sm:p-5">
           <div className="grid grid-cols-2 gap-3 sm:gap-4">
-            <TimePicker label={t("start_time")} onChange={setStartTime} />
-            <TimePicker label={t("end_time")} onChange={setEndTime} />
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                {t("start_time")}
+              </label>
+              <input
+                type="datetime-local"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                dir="ltr"
+                className="w-full h-11 px-3 border border-slate-200 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                {t("end_time")}
+              </label>
+              <input
+                type="datetime-local"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                dir="ltr"
+                className="w-full h-11 px-3 border border-slate-200 text-sm"
+              />
+            </div>
           </div>
           {duration && (
             <div className="mt-4 flex items-center gap-2 bg-[#EDE0ED] px-4 py-2.5">

@@ -104,9 +104,9 @@ export default function Preventive() {
             </select>
           </div>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                 className="h-11 px-3 border border-slate-200 mt-5" />
+                 dir="ltr" className="h-11 px-3 border border-slate-200 mt-5" />
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                 className="h-11 px-3 border border-slate-200 mt-5" />
+                 dir="ltr" className="h-11 px-3 border border-slate-200 mt-5" />
           <div className="flex gap-2 mt-5">
             <button type="submit" className="h-11 px-4 bg-slate-900 text-white font-semibold hover:bg-slate-800 flex-1">
               {t("apply")}

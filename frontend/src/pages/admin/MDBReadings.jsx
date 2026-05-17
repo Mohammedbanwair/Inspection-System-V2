@@ -99,9 +99,9 @@ export default function MDBReadings() {
             {uniquePanels.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                 className="h-11 px-3 border border-slate-200 text-sm" />
+                 dir="ltr" className="h-11 px-3 border border-slate-200 text-sm" />
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                 className="h-11 px-3 border border-slate-200 text-sm" />
+                 dir="ltr" className="h-11 px-3 border border-slate-200 text-sm" />
           <button type="submit"
                   className="h-11 px-4 bg-slate-900 text-white font-semibold hover:bg-slate-800 text-sm">
             {t("apply")}
