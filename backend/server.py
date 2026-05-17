@@ -3248,6 +3248,30 @@ async def delete_notification(nid: str, _=Depends(require_admin)):
     return {"ok": True}
 
 
+# ---------- Work Schedule Settings ----------
+class WorkScheduleBody(BaseModel):
+    hours_per_day: int = Field(default=24, ge=1, le=24)
+    off_days: List[int] = Field(default=[4])  # Python weekday: 0=Mon … 4=Fri … 6=Sun
+
+@api.get("/settings/work-schedule")
+async def get_work_schedule(_=Depends(require_admin)):
+    doc = await db.settings.find_one({"type": "work_schedule"}, {"_id": 0})
+    if not doc:
+        return {"hours_per_day": 24, "off_days": [4]}
+    return {"hours_per_day": doc.get("hours_per_day", 24), "off_days": doc.get("off_days", [4])}
+
+@api.put("/settings/work-schedule")
+async def update_work_schedule(body: WorkScheduleBody, user=Depends(require_admin)):
+    await db.settings.update_one(
+        {"type": "work_schedule"},
+        {"$set": {"type": "work_schedule", "hours_per_day": body.hours_per_day, "off_days": body.off_days}},
+        upsert=True,
+    )
+    await _audit(user["id"], user["name"], "update", "work_schedule", "work_schedule",
+                 f"ساعات العمل: {body.hours_per_day}h — أيام الإجازة: {body.off_days}")
+    return {"hours_per_day": body.hours_per_day, "off_days": body.off_days}
+
+
 # ---------- Audit Log ----------
 @api.get("/audit-logs")
 async def list_audit_logs(
