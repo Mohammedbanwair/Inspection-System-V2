@@ -32,6 +32,7 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
   const [repairDesc, setRepairDesc] = useState("");
   const [startTime, setStartTime] = useState(localISONow);
   const [endTime, setEndTime] = useState(localISONow);
+  const [isPlanned, setIsPlanned] = useState(false);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -47,6 +48,13 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
   const filteredReasons = reasons.filter(
     (r) => !r.specialty || r.specialty === user?.specialty
   );
+
+  const PLANNED_RE = /PREVENTIVE|PM\b|PLANNED|SCHEDULED|صيانة\s*دورية|وقائية|مجدولة/i;
+
+  const handleProblemChange = (val) => {
+    setProblem(val);
+    if (val && val !== t("other_problem")) setIsPlanned(PLANNED_RE.test(val));
+  };
 
   const isOther = problem === t("other_problem");
   const brief = isOther ? otherDesc.trim() : problem;
@@ -64,6 +72,7 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
         repair_description: repairDesc,
         start_time: startTime,
         end_time: endTime,
+        is_planned: isPlanned,
       });
       toast.success(t("breakdown_submitted"));
       setDone(true);
@@ -127,7 +136,7 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
               {t("brief_description")}
             </label>
-            <select value={problem} onChange={(e) => setProblem(e.target.value)}
+            <select value={problem} onChange={(e) => handleProblemChange(e.target.value)}
                     className="w-full h-11 px-3 border border-slate-200 bg-white text-sm">
               <option value="">{t("select_problem")}</option>
               {filteredReasons.map((r) => <option key={r.id} value={r.text}>{r.text}</option>)}
@@ -155,6 +164,31 @@ export default function BreakdownForm({ onBack, onSubmitted }) {
               rows={3}
               className="w-full px-3 py-2 border border-slate-200 text-sm resize-none"
             />
+          </div>
+        </div>
+
+        {/* Planned / Unplanned toggle */}
+        <div className="bg-white border border-slate-200 p-4 sm:p-5">
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+            {ar ? "نوع التوقف" : "Breakdown Type"}
+          </label>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setIsPlanned(false)}
+                    className={`flex-1 h-11 font-semibold text-sm transition-all ${
+                      !isPlanned
+                        ? "bg-red-700 text-white"
+                        : "bg-white border border-slate-200 text-slate-600 hover:bg-red-50"
+                    }`}>
+              {ar ? "غير مخطط" : "Unplanned"}
+            </button>
+            <button type="button" onClick={() => setIsPlanned(true)}
+                    className={`flex-1 h-11 font-semibold text-sm transition-all ${
+                      isPlanned
+                        ? "bg-emerald-600 text-white"
+                        : "bg-white border border-slate-200 text-slate-600 hover:bg-emerald-50"
+                    }`}>
+              {ar ? "مخطط (صيانة دورية)" : "Planned (PM)"}
+            </button>
           </div>
         </div>
 
