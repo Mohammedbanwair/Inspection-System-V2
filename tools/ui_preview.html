@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>معاينة تصميم نظام الفحص</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; }
+  .fade-in { animation: fadeIn .2s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+  .sidebar-item { transition: background .15s, color .15s; }
+  .tab-btn { transition: border-color .15s, color .15s; }
+  .dark-mode { --bg: #0f172a; --surface: #1e293b; --border: #334155; --text: #f1f5f9; --sub: #94a3b8; }
+  body.dark { background:#0f172a; color:#f1f5f9; }
+  body.dark .card { background:#1e293b; border-color:#334155; }
+  body.dark .sidebar { background:#1e293b; border-color:#334155; }
+  body.dark .topbar { background:#1e293b; border-color:#334155; }
+  body.dark .sidebar-item:hover { background:#334155 !important; color:#f1f5f9 !important; }
+  body.dark .sidebar-item.active { background:#334155 !important; }
+  body.dark table thead { background:#0f172a; }
+  body.dark table tbody tr:hover { background:#334155; }
+  body.dark .input-field { background:#334155; border-color:#475569; color:#f1f5f9; }
+  body.dark .group-label { color:#64748b; }
+  body.dark .kpi-sub { color:#94a3b8; }
+  body.dark .page-title { color:#f1f5f9; }
+  body.dark .content-bg { background:#0f172a; }
+  body.dark .modal-bg { background:#1e293b; border-color:#334155; }
+  ::-webkit-scrollbar { width:4px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:4px; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen" id="body">
+
+<!-- ═══════════════════════ TOPBAR ═══════════════════════ -->
+<header class="topbar sticky top-0 z-30 bg-white border-b border-slate-200 h-14 flex items-center px-4 gap-3 shadow-sm">
+  <button id="mobileMenuBtn" class="md:hidden h-9 w-9 flex items-center justify-center border border-slate-200 rounded text-slate-600 hover:bg-slate-50">
+    ☰
+  </button>
+  <div class="flex items-center gap-2 font-bold text-slate-800">
+    <span class="text-lg">⚙</span>
+    <span class="text-[15px]">نظام الفحص والتفتيش</span>
+  </div>
+  <div class="flex-1"></div>
+  <span class="hidden sm:flex text-xs text-slate-500 items-center gap-1">👤 المدير</span>
+  <button onclick="toggleDark()" class="h-9 px-3 border border-slate-200 rounded text-xs hover:bg-slate-50 flex items-center gap-1" title="الوضع الليلي">
+    <span id="darkIcon">🌙</span>
+  </button>
+  <button class="h-9 px-3 bg-slate-100 rounded text-xs hover:bg-slate-200">EN</button>
+</header>
+
+<!-- ═══════════════════════ LAYOUT ═══════════════════════ -->
+<div class="flex max-w-[1400px] mx-auto">
+
+  <!-- Mobile Overlay -->
+  <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="closeMobile()"></div>
+
+  <!-- ═══════ SIDEBAR ═══════ -->
+  <aside id="sidebar" class="sidebar fixed md:sticky top-0 md:top-14 h-full md:h-[calc(100vh-56px)] w-72 md:w-64 bg-white border-l border-slate-200 flex flex-col z-50 md:z-auto overflow-y-auto transition-transform duration-200 -translate-x-full md:translate-x-0" style="right:0;left:auto;">
+
+    <!-- Mobile close -->
+    <div class="md:hidden flex items-center justify-between px-4 py-3 border-b border-slate-200">
+      <span class="text-xs font-bold uppercase tracking-widest text-slate-400">لوحة التحكم</span>
+      <button onclick="closeMobile()" class="h-8 w-8 flex items-center justify-center border border-slate-200 rounded text-slate-500">✕</button>
+    </div>
+
+    <nav class="p-2 space-y-0.5 flex-1">
+
+      <!-- Home -->
+      <div class="px-3 py-1.5">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">لوحة التحكم</span>
+      </div>
+      <button onclick="navigate('overview')" class="sidebar-item active w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-white bg-slate-900" id="nav-overview">
+        <span>📊</span> نظرة عامة
+      </button>
+
+      <!-- Daily Ops -->
+      <div class="mt-3">
+        <button onclick="toggleGroup('ops')" class="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 group-label">
+          <span id="ops-caret">▼</span> العمليات اليومية
+        </button>
+        <div id="ops-items" class="space-y-0.5 ps-1">
+          <button onclick="navigate('inspections')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-inspections">
+            <span>📋</span> الفحوصات
+          </button>
+          <button onclick="navigate('breakdowns')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-breakdowns">
+            <span>⚡</span> التوقفات
+          </button>
+          <button onclick="navigate('mdb')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-mdb">
+            <span>📈</span> قراءات MDB
+          </button>
+          <button onclick="navigate('failures')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-failures">
+            <span>⚠️</span> الأعطال
+          </button>
+        </div>
+      </div>
+
+      <!-- Preventive -->
+      <div class="mt-3">
+        <button onclick="toggleGroup('prev')" class="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 group-label">
+          <span id="prev-caret">▼</span> الصيانة الوقائية
+        </button>
+        <div id="prev-items" class="space-y-0.5 ps-1">
+          <button onclick="navigate('preventive')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-preventive">
+            <span>🔧</span> السجل والخطط
+            <span class="ms-auto text-[10px] text-slate-400 font-normal border border-slate-200 rounded px-1">تابات</span>
+          </button>
+          <button onclick="navigate('schedule')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-schedule">
+            <span>📅</span> جدول العمل
+          </button>
+        </div>
+      </div>
+
+      <!-- Equipment -->
+      <div class="mt-3">
+        <button onclick="toggleGroup('equip')" class="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 group-label">
+          <span id="equip-caret">▼</span> المعدات والأصول
+        </button>
+        <div id="equip-items" class="space-y-0.5 ps-1">
+          <button onclick="navigate('equipment')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-equipment">
+            <span>🏭</span> المعدات
+            <span class="ms-auto text-[10px] text-slate-400 font-normal border border-slate-200 rounded px-1">4 تابات</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Analytics -->
+      <div class="mt-3">
+        <button onclick="toggleGroup('anl')" class="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 group-label">
+          <span id="anl-caret">▼</span> التقارير والتحليلات
+        </button>
+        <div id="anl-items" class="space-y-0.5 ps-1">
+          <button onclick="navigate('analytics')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-analytics">
+            <span>📉</span> التحليلات
+          </button>
+        </div>
+      </div>
+
+      <!-- Settings -->
+      <div class="mt-3">
+        <button onclick="toggleGroup('set')" class="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 group-label">
+          <span id="set-caret">▼</span> الإعدادات
+        </button>
+        <div id="set-items" class="space-y-0.5 ps-1">
+          <button onclick="navigate('team')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-team">
+            <span>👥</span> إدارة الفريق
+            <span class="ms-auto h-5 min-w-[20px] px-1 bg-red-500 text-white text-xs font-bold flex items-center justify-center rounded-full">3</span>
+          </button>
+          <button onclick="navigate('questions')" class="sidebar-item w-full flex items-center gap-3 px-4 py-2.5 rounded text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900" id="nav-questions">
+            <span>❓</span> أسئلة الفحص
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="p-4 border-t border-slate-200">
+      <div class="text-xs text-slate-400 text-center">v2.0 — نموذج تجريبي</div>
+    </div>
+  </aside>
+
+  <!-- ═══════ MAIN CONTENT ═══════ -->
+  <main class="content-bg flex-1 min-w-0 p-4 md:p-6" style="min-height:calc(100vh - 56px)">
+
+    <!-- Breadcrumb -->
+    <div class="flex items-center gap-1.5 text-xs text-slate-400 mb-4" id="breadcrumb">
+      <span>لوحة التحكم</span>
+      <span>›</span>
+      <span id="breadcrumb-page" class="text-slate-600 font-medium">نظرة عامة</span>
+    </div>
+
+    <!-- PAGE: OVERVIEW -->
+    <div id="page-overview" class="fade-in">
+      <h1 class="page-title text-xl font-bold text-slate-900 mb-5">نظرة عامة</h1>
+
+      <!-- KPI Cards Row -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div class="card bg-white border border-slate-200 rounded-xl p-4">
+          <div class="flex items-start justify-between mb-2">
+            <div class="text-2xl font-bold text-slate-900">1,248</div>
+            <span class="text-green-600 text-xs font-semibold bg-green-50 px-2 py-0.5 rounded-full">↑ 12%</span>
+          </div>
+          <div class="text-xs text-slate-500 kpi-sub">إجمالي الفحوصات</div>
+          <div class="text-[10px] text-slate-400 mt-1">مقارنة بالشهر الماضي</div>
+        </div>
+        <div class="card bg-white border border-slate-200 rounded-xl p-4">
+          <div class="flex items-start justify-between mb-2">
+            <div class="text-2xl font-bold text-blue-600">34</div>
+            <span class="text-blue-600 text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-full">اليوم</span>
+          </div>
+          <div class="text-xs text-slate-500 kpi-sub">فحوصات اليوم</div>
+          <div class="text-[10px] text-slate-400 mt-1">آخر تحديث: 10:45 ص</div>
+        </div>
+        <div class="card bg-white border border-slate-200 rounded-xl p-4">
+          <div class="flex items-start justify-between mb-2">
+            <div class="text-2xl font-bold text-amber-600">7</div>
+            <span class="text-amber-600 text-xs font-semibold bg-amber-50 px-2 py-0.5 rounded-full">↑ 3</span>
+          </div>
+          <div class="text-xs text-slate-500 kpi-sub">أعطال مفتوحة</div>
+          <div class="text-[10px] text-slate-400 mt-1">تحتاج متابعة</div>
+        </div>
+        <div class="card bg-white border border-slate-200 rounded-xl p-4">
+          <div class="flex items-start justify-between mb-2">
+            <div class="text-2xl font-bold text-slate-900">494</div>
+            <span class="text-slate-500 text-xs font-semibold bg-slate-50 px-2 py-0.5 rounded-full">مايو</span>
+          </div>
+          <div class="text-xs text-slate-500 kpi-sub">توقفات هذا الشهر</div>
+          <div class="text-[10px] text-slate-400 mt-1">312 ساعة تراكمية</div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <!-- Line chart -->
+        <div class="card bg-white border border-slate-200 rounded-xl p-4 lg:col-span-2">
+          <div class="text-sm font-semibold text-slate-700 mb-3">الفحوصات — آخر 14 يوم</div>
+          <canvas id="lineChart" height="120"></canvas>
+        </div>
+        <!-- Pie chart -->
+        <div class="card bg-white border border-slate-200 rounded-xl p-4">
+          <div class="text-sm font-semibold text-slate-700 mb-3">أسباب التوقفات</div>
+          <canvas id="pieChart" height="160"></canvas>
+        </div>
+      </div>
+
+      <!-- Bar chart + recent failures -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card bg-white border border-slate-200 rounded-xl p-4">
+          <div class="text-sm font-semibold text-slate-700 mb-3">ساعات التوقف — أعلى 6 ماكينات</div>
+          <canvas id="barChart" height="140"></canvas>
+        </div>
+        <div class="card bg-white border border-slate-200 rounded-xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-sm font-semibold text-slate-700">آخر الأعطال المفتوحة</div>
+            <button onclick="navigate('failures')" class="text-xs text-blue-600 hover:underline">عرض الكل</button>
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center gap-3 p-2 rounded-lg bg-red-50 border border-red-100">
+              <span class="h-2 w-2 rounded-full bg-red-500 shrink-0"></span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-slate-800 truncate">MC40 — خلل في موتور الضغط</div>
+                <div class="text-xs text-slate-500">منذ 2 ساعة</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-2 rounded-lg bg-amber-50 border border-amber-100">
+              <span class="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-slate-800 truncate">MC07 — ارتفاع درجة الحرارة</div>
+                <div class="text-xs text-slate-500">منذ 5 ساعات</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-2 rounded-lg bg-amber-50 border border-amber-100">
+              <span class="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-slate-800 truncate">MC86 — تسرب زيت</div>
+                <div class="text-xs text-slate-500">منذ 1 يوم</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-2 rounded-lg bg-slate-50 border border-slate-100">
+              <span class="h-2 w-2 rounded-full bg-slate-400 shrink-0"></span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-slate-800 truncate">MC11 — ضوضاء غير طبيعية</div>
+                <div class="text-xs text-slate-500">منذ 2 يوم</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: EQUIPMENT (MERGED) -->
+    <div id="page-equipment" class="fade-in hidden">
+      <h1 class="page-title text-xl font-bold text-slate-900 mb-1">المعدات والأصول</h1>
+      <p class="text-sm text-slate-500 mb-5">إدارة جميع معدات المصنع في مكان واحد</p>
+
+      <!-- Tabs -->
+      <div class="flex gap-0 border-b border-slate-200 mb-5 overflow-x-auto">
+        <button onclick="setEquipTab('machines')" id="etab-machines" class="tab-btn px-5 py-2.5 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 shrink-0">
+          🔩 ماكينات <span class="ms-1 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">47</span>
+        </button>
+        <button onclick="setEquipTab('chillers')" id="etab-chillers" class="tab-btn px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700 shrink-0">
+          ❄️ شيلرات <span class="ms-1 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">8</span>
+        </button>
+        <button onclick="setEquipTab('towers')" id="etab-towers" class="tab-btn px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700 shrink-0">
+          🏗 أبراج تبريد <span class="ms-1 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">4</span>
+        </button>
+        <button onclick="setEquipTab('panels')" id="etab-panels" class="tab-btn px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700 shrink-0">
+          ⚡ لوحات كهربائية <span class="ms-1 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">12</span>
+        </button>
+      </div>
+
+      <!-- Search + Add -->
+      <div class="flex flex-col sm:flex-row gap-3 mb-4">
+        <input type="text" placeholder="🔍  بحث بالاسم أو الرقم..." class="input-field flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+        <select class="input-field border border-slate-200 rounded-lg px-3 py-2 text-sm">
+          <option>جميع الحالات</option>
+          <option>نشط</option>
+          <option>متوقف</option>
+        </select>
+        <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shrink-0">
+          + إضافة ماكينة
+        </button>
+      </div>
+
+      <!-- Table -->
+      <div class="card bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600 sticky top-0">#</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600 sticky top-0">رقم الماكينة</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600 sticky top-0">الاسم</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600 sticky top-0">القسم</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600 sticky top-0">الحالة</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600 sticky top-0">الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-3 text-slate-400">1</td>
+                <td class="px-4 py-3 font-bold text-slate-800">MC05</td>
+                <td class="px-4 py-3 text-slate-700">ماكينة حقن A1</td>
+                <td class="px-4 py-3 text-slate-500">الإنتاج</td>
+                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs font-medium">نشطة</span></td>
+                <td class="px-4 py-3">
+                  <div class="flex gap-2">
+                    <button class="text-blue-600 hover:text-blue-800 text-xs border border-blue-200 hover:border-blue-400 px-2 py-1 rounded">✏ تعديل</button>
+                    <button class="text-red-500 hover:text-red-700 text-xs border border-red-200 hover:border-red-400 px-2 py-1 rounded">🗑 حذف</button>
+                  </div>
+                </td>
+              </tr>
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-3 text-slate-400">2</td>
+                <td class="px-4 py-3 font-bold text-slate-800">MC07</td>
+                <td class="px-4 py-3 text-slate-700">ماكينة حقن A2</td>
+                <td class="px-4 py-3 text-slate-500">الإنتاج</td>
+                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-red-50 text-red-700 rounded-full text-xs font-medium">متوقفة</span></td>
+                <td class="px-4 py-3">
+                  <div class="flex gap-2">
+                    <button class="text-blue-600 hover:text-blue-800 text-xs border border-blue-200 hover:border-blue-400 px-2 py-1 rounded">✏ تعديل</button>
+                    <button class="text-red-500 hover:text-red-700 text-xs border border-red-200 hover:border-red-400 px-2 py-1 rounded">🗑 حذف</button>
+                  </div>
+                </td>
+              </tr>
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-3 text-slate-400">3</td>
+                <td class="px-4 py-3 font-bold text-slate-800">MC11</td>
+                <td class="px-4 py-3 text-slate-700">ماكينة نفخ B1</td>
+                <td class="px-4 py-3 text-slate-500">التغليف</td>
+                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs font-medium">نشطة</span></td>
+                <td class="px-4 py-3">
+                  <div class="flex gap-2">
+                    <button class="text-blue-600 hover:text-blue-800 text-xs border border-blue-200 hover:border-blue-400 px-2 py-1 rounded">✏ تعديل</button>
+                    <button class="text-red-500 hover:text-red-700 text-xs border border-red-200 hover:border-red-400 px-2 py-1 rounded">🗑 حذف</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Pagination -->
+        <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-500">
+          <div>عرض 1–25 من 47</div>
+          <div class="flex gap-1">
+            <button class="h-8 w-8 flex items-center justify-center border border-slate-200 rounded hover:bg-slate-50">‹</button>
+            <button class="h-8 w-8 flex items-center justify-center bg-slate-900 text-white rounded text-xs font-bold">1</button>
+            <button class="h-8 w-8 flex items-center justify-center border border-slate-200 rounded hover:bg-slate-50">2</button>
+            <button class="h-8 w-8 flex items-center justify-center border border-slate-200 rounded hover:bg-slate-50">›</button>
+          </div>
+          <select class="border border-slate-200 rounded px-2 py-1 text-xs">
+            <option>25 / صفحة</option>
+            <option>50 / صفحة</option>
+            <option>100 / صفحة</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: TEAM MANAGEMENT (MERGED) -->
+    <div id="page-team" class="fade-in hidden">
+      <h1 class="page-title text-xl font-bold text-slate-900 mb-1">إدارة الفريق</h1>
+      <p class="text-sm text-slate-500 mb-5">المستخدمون والصلاحيات وطلبات التسجيل</p>
+
+      <div class="flex gap-0 border-b border-slate-200 mb-5">
+        <button onclick="setTeamTab('users')" id="ttab-users" class="tab-btn px-5 py-2.5 text-sm font-semibold text-blue-600 border-b-2 border-blue-600">
+          👤 المستخدمون
+        </button>
+        <button onclick="setTeamTab('reqs')" id="ttab-reqs" class="tab-btn px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700 flex items-center gap-2">
+          📩 طلبات التسجيل
+          <span class="h-5 min-w-[20px] px-1 bg-red-500 text-white text-xs font-bold flex items-center justify-center rounded-full">3</span>
+        </button>
+        <button onclick="setTeamTab('perms')" id="ttab-perms" class="tab-btn px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700">
+          🛡 الصلاحيات
+        </button>
+      </div>
+
+      <div id="team-users" class="card bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div class="p-4 border-b border-slate-100 flex gap-3">
+          <input type="text" placeholder="🔍  بحث بالاسم أو رقم الموظف..." class="input-field flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+          <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shrink-0">+ مستخدم جديد</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600">الاسم</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600">رقم الموظف</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600">الدور</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600">الحالة</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600">الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-3 font-medium text-slate-800">أحمد محمد</td>
+                <td class="px-4 py-3 text-slate-500">EMP-001</td>
+                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs">تقني</span></td>
+                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs">نشط</span></td>
+                <td class="px-4 py-3">
+                  <button class="text-blue-600 hover:text-blue-800 text-xs border border-blue-200 px-2 py-1 rounded">✏ تعديل</button>
+                </td>
+              </tr>
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-3 font-medium text-slate-800">سعيد علي</td>
+                <td class="px-4 py-3 text-slate-500">EMP-002</td>
+                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-xs">مساعد</span></td>
+                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs">نشط</span></td>
+                <td class="px-4 py-3">
+                  <button class="text-blue-600 hover:text-blue-800 text-xs border border-blue-200 px-2 py-1 rounded">✏ تعديل</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="team-reqs" class="hidden">
+        <div class="space-y-3">
+          <div class="card bg-white border border-amber-200 rounded-xl p-4">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="font-semibold text-slate-800">خالد سعد — EMP-088</div>
+                <div class="text-sm text-slate-500 mt-0.5">طلب دور: تقني | 2026-05-18 08:30</div>
+              </div>
+              <div class="flex gap-2">
+                <button class="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg">✓ قبول</button>
+                <button class="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded-lg">✕ رفض</button>
+              </div>
+            </div>
+          </div>
+          <div class="card bg-white border border-amber-200 rounded-xl p-4">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="font-semibold text-slate-800">يوسف حسن — EMP-091</div>
+                <div class="text-sm text-slate-500 mt-0.5">طلب دور: مساعد | 2026-05-17 14:00</div>
+              </div>
+              <div class="flex gap-2">
+                <button class="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg">✓ قبول</button>
+                <button class="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded-lg">✕ رفض</button>
+              </div>
+            </div>
+          </div>
+          <div class="card bg-white border border-amber-200 rounded-xl p-4">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="font-semibold text-slate-800">عمر فهد — EMP-095</div>
+                <div class="text-sm text-slate-500 mt-0.5">طلب دور: تقني | 2026-05-16 09:15</div>
+              </div>
+              <div class="flex gap-2">
+                <button class="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg">✓ قبول</button>
+                <button class="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded-lg">✕ رفض</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="team-perms" class="hidden">
+        <div class="card bg-white border border-slate-200 rounded-xl p-6">
+          <div class="text-sm text-slate-500 mb-4">تحديد الصلاحيات لكل دور</div>
+          <div class="space-y-4">
+            <div class="flex items-center justify-between py-3 border-b border-slate-100">
+              <div><div class="font-medium text-slate-800">فحص ماكينات كهربائية</div><div class="text-xs text-slate-400">قسم A وB</div></div>
+              <div class="flex gap-3">
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" checked class="rounded" /> تقني</label>
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" class="rounded" /> مساعد</label>
+              </div>
+            </div>
+            <div class="flex items-center justify-between py-3 border-b border-slate-100">
+              <div><div class="font-medium text-slate-800">إدخال توقفات</div><div class="text-xs text-slate-400">Breakdown Form</div></div>
+              <div class="flex gap-3">
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" checked class="rounded" /> تقني</label>
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" class="rounded" /> مساعد</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: PREVENTIVE (MERGED) -->
+    <div id="page-preventive" class="fade-in hidden">
+      <h1 class="page-title text-xl font-bold text-slate-900 mb-1">الصيانة الوقائية</h1>
+      <p class="text-sm text-slate-500 mb-5">سجل الصيانة المنجزة وخطط الصيانة المجدولة</p>
+      <div class="flex gap-0 border-b border-slate-200 mb-5">
+        <button onclick="setPrevTab('records')" id="ptab-records" class="tab-btn px-5 py-2.5 text-sm font-semibold text-blue-600 border-b-2 border-blue-600">📝 سجل الصيانة</button>
+        <button onclick="setPrevTab('plans')" id="ptab-plans" class="tab-btn px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700">📅 خطط الصيانة</button>
+      </div>
+      <div id="prev-records" class="card bg-white border border-slate-200 rounded-xl p-6 text-slate-500 text-sm">سجل الصيانة المنجزة سيظهر هنا مع بحث وفلترة كاملة...</div>
+      <div id="prev-plans" class="hidden card bg-white border border-slate-200 rounded-xl p-6 text-slate-500 text-sm">خطط الصيانة المجدولة ستظهر هنا...</div>
+    </div>
+
+    <!-- PAGE: TECHNICIAN VIEW -->
+    <div id="page-tech" class="fade-in hidden">
+      <h1 class="page-title text-xl font-bold text-slate-900 mb-4">واجهة التقني — تصميم الجوال</h1>
+      <div class="max-w-sm mx-auto">
+        <!-- Phone mockup -->
+        <div class="border-4 border-slate-800 rounded-3xl overflow-hidden bg-white shadow-xl">
+          <!-- Status bar -->
+          <div class="bg-slate-900 text-white text-xs flex items-center justify-between px-4 py-1.5">
+            <span>9:41</span><span>●●●●</span>
+          </div>
+          <!-- Top -->
+          <div class="bg-slate-900 px-4 py-3">
+            <div class="text-white font-bold text-sm">مرحباً، أحمد 👋</div>
+            <div class="text-slate-400 text-xs">الإثنين 18 مايو 2026 — وردية صباحية</div>
+          </div>
+          <!-- Daily summary -->
+          <div class="px-4 py-3 bg-slate-50 border-b border-slate-100">
+            <div class="grid grid-cols-3 gap-2 text-center">
+              <div><div class="text-xl font-bold text-slate-900">12</div><div class="text-xs text-slate-500">فحص اليوم</div></div>
+              <div><div class="text-xl font-bold text-amber-600">2</div><div class="text-xs text-slate-500">أعطال</div></div>
+              <div><div class="text-xl font-bold text-blue-600">4</div><div class="text-xs text-slate-500">توقفات</div></div>
+            </div>
+          </div>
+          <!-- Content area -->
+          <div class="px-4 py-4" style="min-height:200px">
+            <div class="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">آخر الإدخالات</div>
+            <div class="space-y-2">
+              <div class="flex items-center gap-2 p-2 bg-green-50 rounded-lg text-xs">
+                <span>✅</span><div><div class="font-medium text-slate-800">MC40 — فحص كهربائي</div><div class="text-slate-400">10:30 ص</div></div>
+              </div>
+              <div class="flex items-center gap-2 p-2 bg-green-50 rounded-lg text-xs">
+                <span>✅</span><div><div class="font-medium text-slate-800">MC07 — فحص ميكانيكي</div><div class="text-slate-400">09:15 ص</div></div>
+              </div>
+            </div>
+          </div>
+          <!-- Bottom nav -->
+          <div class="border-t border-slate-200 bg-white">
+            <div class="grid grid-cols-4 text-center">
+              <button class="py-3 flex flex-col items-center gap-1">
+                <span class="text-lg">🏠</span>
+                <span class="text-[9px] text-blue-600 font-semibold">الرئيسية</span>
+              </button>
+              <button class="py-3 flex flex-col items-center gap-1 opacity-50">
+                <span class="text-lg">📋</span>
+                <span class="text-[9px] text-slate-500">الفحص</span>
+              </button>
+              <button class="py-3 flex flex-col items-center gap-1 opacity-50">
+                <span class="text-lg">⚡</span>
+                <span class="text-[9px] text-slate-500">التوقفات</span>
+              </button>
+              <button class="py-3 flex flex-col items-center gap-1 opacity-50">
+                <span class="text-lg">📊</span>
+                <span class="text-[9px] text-slate-500">القراءات</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <p class="text-center text-xs text-slate-400 mt-3">واجهة التقني على الجوال — تصميم مقترح</p>
+      </div>
+    </div>
+
+    <!-- Placeholder pages -->
+    <div id="page-inspections" class="fade-in hidden"><h1 class="page-title text-xl font-bold text-slate-900 mb-4">الفحوصات</h1><div class="card bg-white border border-slate-200 rounded-xl p-6 text-slate-400 text-sm">جدول الفحوصات مع بحث + فلتر + pagination...</div></div>
+    <div id="page-breakdowns" class="fade-in hidden"><h1 class="page-title text-xl font-bold text-slate-900 mb-4">التوقفات</h1><div class="card bg-white border border-slate-200 rounded-xl p-6 text-slate-400 text-sm">جدول التوقفات (494 سجل مرفوع) مع بحث + فلتر بالتاريخ + pagination...</div></div>
+    <div id="page-mdb" class="fade-in hidden"><h1 class="page-title text-xl font-bold text-slate-900 mb-4">قراءات MDB</h1><div class="card bg-white border border-slate-200 rounded-xl p-6 text-slate-400 text-sm">جدول قراءات MDB...</div></div>
+    <div id="page-failures" class="fade-in hidden"><h1 class="page-title text-xl font-bold text-slate-900 mb-4">الأعطال</h1><div class="card bg-white border border-slate-200 rounded-xl p-6 text-slate-400 text-sm">جدول الأعطال مع فلتر الحالة (مفتوح/مغلق)...</div></div>
+    <div id="page-schedule" class="fade-in hidden"><h1 class="page-title text-xl font-bold text-slate-900 mb-4">جدول العمل</h1><div class="card bg-white border border-slate-200 rounded-xl p-6 text-slate-400 text-sm">جدول الوردايات وتواريخ العمل...</div></div>
+    <div id="page-analytics" class="fade-in hidden"><h1 class="page-title text-xl font-bold text-slate-900 mb-4">التحليلات والتقارير</h1><div class="card bg-white border border-slate-200 rounded-xl p-6 text-slate-400 text-sm">مخططات تحليلية متقدمة وتقارير قابلة للتصدير...</div></div>
+    <div id="page-questions" class="fade-in hidden"><h1 class="page-title text-xl font-bold text-slate-900 mb-4">أسئلة الفحص</h1><div class="card bg-white border border-slate-200 rounded-xl p-6 text-slate-400 text-sm">إدارة أسئلة قوائم الفحص...</div></div>
+
+  </main>
+</div>
+
+<!-- View Technician btn -->
+<div class="fixed bottom-6 left-6 z-20">
+  <button onclick="navigate('tech')" class="px-4 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-xl shadow-lg hover:bg-slate-700 flex items-center gap-2">
+    📱 معاينة واجهة التقني
+  </button>
+</div>
+
+<script>
+// ─── Navigation ───────────────────────────────────────────
+const pages = ['overview','equipment','team','preventive','inspections','breakdowns','mdb','failures','schedule','analytics','questions','tech'];
+const labels = {overview:'نظرة عامة',equipment:'المعدات والأصول',team:'إدارة الفريق',preventive:'الصيانة الوقائية',inspections:'الفحوصات',breakdowns:'التوقفات',mdb:'قراءات MDB',failures:'الأعطال',schedule:'جدول العمل',analytics:'التحليلات',questions:'أسئلة الفحص',tech:'واجهة التقني'};
+
+function navigate(page) {
+  pages.forEach(p => {
+    const el = document.getElementById('page-'+p);
+    if (el) el.classList.add('hidden');
+    const nav = document.getElementById('nav-'+p);
+    if (nav) { nav.classList.remove('bg-slate-900','text-white'); nav.classList.add('text-slate-600'); }
+  });
+  const target = document.getElementById('page-'+page);
+  if (target) { target.classList.remove('hidden'); target.classList.add('fade-in'); }
+  const navBtn = document.getElementById('nav-'+page);
+  if (navBtn) { navBtn.classList.add('bg-slate-900','text-white'); navBtn.classList.remove('text-slate-600'); }
+  document.getElementById('breadcrumb-page').textContent = labels[page] || page;
+  closeMobile();
+  if (page === 'overview' && !window.chartsBuilt) buildCharts();
+}
+
+// ─── Groups ───────────────────────────────────────────────
+const groups = {ops:true, prev:true, equip:true, anl:true, set:true};
+function toggleGroup(g) {
+  groups[g] = !groups[g];
+  document.getElementById(g+'-items').classList.toggle('hidden', !groups[g]);
+  document.getElementById(g+'-caret').textContent = groups[g] ? '▼' : '›';
+}
+
+// ─── Equipment Tabs ───────────────────────────────────────
+const etabs = ['machines','chillers','towers','panels'];
+function setEquipTab(t) {
+  etabs.forEach(x => {
+    document.getElementById('etab-'+x).className = 'tab-btn px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700 shrink-0';
+  });
+  document.getElementById('etab-'+t).className = 'tab-btn px-5 py-2.5 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 shrink-0';
+}
+
+// ─── Team Tabs ────────────────────────────────────────────
+function setTeamTab(t) {
+  ['users','reqs','perms'].forEach(x => {
+    document.getElementById('ttab-'+x).className = 'tab-btn px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700' + (x==='reqs' ? ' flex items-center gap-2' : '');
+    document.getElementById('team-'+x).classList.add('hidden');
+  });
+  document.getElementById('ttab-'+t).className = 'tab-btn px-5 py-2.5 text-sm font-semibold text-blue-600 border-b-2 border-blue-600' + (t==='reqs' ? ' flex items-center gap-2' : '');
+  document.getElementById('team-'+t).classList.remove('hidden');
+}
+
+// ─── Preventive Tabs ──────────────────────────────────────
+function setPrevTab(t) {
+  ['records','plans'].forEach(x => {
+    document.getElementById('ptab-'+x).className = 'tab-btn px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700';
+    document.getElementById('prev-'+x).classList.add('hidden');
+  });
+  document.getElementById('ptab-'+t).className = 'tab-btn px-5 py-2.5 text-sm font-semibold text-blue-600 border-b-2 border-blue-600';
+  document.getElementById('prev-'+t).classList.remove('hidden');
+}
+
+// ─── Dark Mode ────────────────────────────────────────────
+function toggleDark() {
+  document.getElementById('body').classList.toggle('dark');
+  const isDark = document.getElementById('body').classList.contains('dark');
+  document.getElementById('darkIcon').textContent = isDark ? '☀️' : '🌙';
+  if (window.chartsBuilt) { destroyCharts(); buildCharts(); }
+}
+
+// ─── Mobile ───────────────────────────────────────────────
+document.getElementById('mobileMenuBtn').onclick = () => {
+  document.getElementById('sidebar').style.transform = 'translateX(0)';
+  document.getElementById('overlay').classList.remove('hidden');
+};
+function closeMobile() {
+  document.getElementById('sidebar').style.transform = '';
+  document.getElementById('overlay').classList.add('hidden');
+}
+
+// ─── Charts ───────────────────────────────────────────────
+let charts = [];
+function destroyCharts() { charts.forEach(c => c.destroy()); charts = []; window.chartsBuilt = false; }
+
+function buildCharts() {
+  const isDark = document.getElementById('body').classList.contains('dark');
+  const textColor = isDark ? '#94a3b8' : '#64748b';
+  const gridColor = isDark ? '#1e293b' : '#f1f5f9';
+
+  const lineCtx = document.getElementById('lineChart');
+  if (!lineCtx) return;
+
+  charts.push(new Chart(lineCtx, {
+    type: 'line',
+    data: {
+      labels: ['5/5','6/5','7/5','8/5','9/5','10/5','11/5','12/5','13/5','14/5','15/5','16/5','17/5','18/5'],
+      datasets: [{
+        label: 'فحوصات',
+        data: [28,34,31,40,38,22,18,42,39,35,44,30,41,34],
+        borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)',
+        borderWidth: 2, pointRadius: 3, fill: true, tension: 0.4
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 11 } }, grid: { color: gridColor } },
+        y: { ticks: { color: textColor, font: { size: 11 } }, grid: { color: gridColor } }
+      }
+    }
+  }));
+
+  charts.push(new Chart(document.getElementById('pieChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['أعطال ميكانيكية', 'أعطال كهربائية', 'نقص خامات', 'إعداد وضبط', 'أخرى'],
+      datasets: [{ data: [35, 25, 18, 12, 10],
+        backgroundColor: ['#ef4444','#f59e0b','#3b82f6','#10b981','#8b5cf6'], borderWidth: 0 }]
+    },
+    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: textColor, font: { size: 10 }, boxWidth: 10 } } }, cutout: '65%' }
+  }));
+
+  charts.push(new Chart(document.getElementById('barChart'), {
+    type: 'bar',
+    data: {
+      labels: ['MC40','MC07','MC86','MC11','MC50','MC35'],
+      datasets: [{ label: 'ساعات توقف',
+        data: [42, 38, 31, 28, 24, 19],
+        backgroundColor: ['#ef4444','#f59e0b','#f59e0b','#3b82f6','#3b82f6','#3b82f6'],
+        borderRadius: 4 }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 11 } }, grid: { display: false } },
+        y: { ticks: { color: textColor, font: { size: 11 } }, grid: { color: gridColor } }
+      }
+    }
+  }));
+
+  window.chartsBuilt = true;
+}
+
+// Init
+window.onload = () => { buildCharts(); };
+</script>
+</body>
+</html>
