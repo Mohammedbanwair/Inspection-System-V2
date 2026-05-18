@@ -183,6 +183,8 @@ function ManageReasons({ t, ar }) {
   );
 }
 
+const PAGE_SIZES = [25, 50, 100];
+
 export default function Breakdown() {
   const { t, lang } = useI18n();
   const ar = lang === "ar";
@@ -194,6 +196,9 @@ export default function Breakdown() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showReasons, setShowReasons] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   useEffect(() => {
     api.get("/machines").then(({ data }) => setMachines(data)).catch(() => {});
@@ -218,9 +223,9 @@ export default function Breakdown() {
 
   useEffect(() => { load(); }, []); // eslint-disable-line
 
-  const apply = (e) => { e.preventDefault(); load(); };
+  const apply = (e) => { e.preventDefault(); setPage(1); load(); };
   const reset = () => {
-    setMachineId(""); setDateFrom(""); setDateTo("");
+    setMachineId(""); setDateFrom(""); setDateTo(""); setSearch(""); setPage(1);
     setTimeout(load, 0);
   };
 
@@ -248,6 +253,20 @@ export default function Breakdown() {
       toast.success(ar ? "تم التصدير ✓" : "Exported ✓");
     } catch (e) { toast.error(formatApiError(e)); }
   };
+
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? list.filter((b) =>
+        (b.machine_number || "").toLowerCase().includes(q) ||
+        (b.machine_name   || "").toLowerCase().includes(q) ||
+        (b.technician_name|| "").toLowerCase().includes(q) ||
+        (b.brief_description || "").toLowerCase().includes(q)
+      )
+    : list;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage   = Math.min(page, totalPages);
+  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const total    = list.length;
   const todayStr = new Date().toDateString();
@@ -391,11 +410,22 @@ export default function Breakdown() {
         </div>
       </form>
 
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-bold text-slate-900">{t("results")} ({list.length})</h3>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2 flex-1">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder={ar ? "🔍  بحث بالمكينة أو الفني أو السبب..." : "🔍  Search machine, technician, reason..."}
+            className="h-10 px-3 border border-slate-200 text-sm flex-1 max-w-xs focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+          <span className="text-xs text-slate-500 shrink-0">
+            {filtered.length} {ar ? "نتيجة" : "results"}
+          </span>
+        </div>
         <button
           onClick={exportExcel}
-          className="h-10 px-4 bg-[#1D6F42] text-white font-semibold flex items-center gap-2 hover:bg-[#155734] text-sm"
+          className="h-10 px-4 bg-[#1D6F42] text-white font-semibold flex items-center gap-2 hover:bg-[#155734] text-sm shrink-0"
         >
           <FileXls size={16} weight="bold" />
           {t("export_excel_downtime")}
@@ -422,10 +452,10 @@ export default function Breakdown() {
                 <div className="inline-block w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
               </td></tr>
             )}
-            {!loading && list.length === 0 && (
+            {!loading && filtered.length === 0 && (
               <tr><td colSpan="8" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
             )}
-            {list.map((b, i) => (
+            {paginated.map((b, i) => (
               <tr key={b.id} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
                 <td className="px-4 py-3 whitespace-nowrap">
                   {new Date(b.created_at).toLocaleString(ar ? "ar-EG" : "en-US", {
@@ -464,6 +494,51 @@ export default function Breakdown() {
             ))}
           </tbody>
         </table>
+        {/* Pagination */}
+        {filtered.length > pageSize && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-500">
+            <span>
+              {ar
+                ? `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, filtered.length)} من ${filtered.length}`
+                : `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, filtered.length)} of ${filtered.length}`}
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="h-8 w-8 flex items-center justify-center border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-40"
+              >‹</button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const pg = Math.max(1, Math.min(totalPages - 4, safePage - 2)) + i;
+                return (
+                  <button
+                    key={pg}
+                    onClick={() => setPage(pg)}
+                    className={`h-8 w-8 flex items-center justify-center border rounded text-xs font-semibold ${
+                      pg === safePage
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >{pg}</button>
+                );
+              })}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="h-8 w-8 flex items-center justify-center border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-40"
+              >›</button>
+            </div>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              className="border border-slate-200 rounded px-2 py-1 text-xs"
+            >
+              {PAGE_SIZES.map((s) => (
+                <option key={s} value={s}>{s} {ar ? "/ صفحة" : "/ page"}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
     </div>
   );
