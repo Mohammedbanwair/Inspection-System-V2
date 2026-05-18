@@ -24,7 +24,8 @@ export default function EntityCRUD({ resource, addLabelKey, testidPrefix, reorde
       toast.error(formatApiError(e));
     }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [resource]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [resource]);
 
   const openCreate = () => { setEditing(null); setNumber(""); setName(""); setShowForm(true); };
   const openEdit = (m) => { setEditing(m); setNumber(m.number); setName(m.name || ""); setShowForm(true); };
