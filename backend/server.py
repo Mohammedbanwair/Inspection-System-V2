@@ -115,23 +115,6 @@ def _rl_check_export(ip: str) -> None:
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ── Audit log helper ─────────────────────────────────────────────
-async def _audit(actor_id: str, actor_name: str, action: str,
-                 resource_type: str, resource_id: str = "", details: str = "") -> None:
-    try:
-        await db.audit_logs.insert_one({
-            "id": str(uuid.uuid4()),
-            "actor_id": actor_id,
-            "actor_name": actor_name,
-            "action": action,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "details": details,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-    except Exception as e:
-        logger.warning(f"_audit failed: {e}")
-
 # ── Notification helper ───────────────────────────────────────────
 async def _notify(ntype: str, title_ar: str, body_ar: str, ref_id: str = "") -> None:
     try:
@@ -404,8 +387,6 @@ async def approve_registration(
                                "approved_at": datetime.now(timezone.utc).isoformat(),
                                "expires_at": datetime.now(timezone.utc) + timedelta(days=30)}}
     )
-    await _audit(admin["id"], admin["name"], "approve", "registration", rid,
-                 f"{req['name']} ({emp})")
     return {"ok": True}
 
 
@@ -476,7 +457,6 @@ async def create_user(body: UserCreate, admin=Depends(require_admin)):
     except pymongo.errors.DuplicateKeyError:
         raise HTTPException(400, "رقم الموظف مستخدم مسبقاً")
     doc.pop("password_hash"); doc.pop("_id", None)
-    await _audit(admin["id"], admin["name"], "create", "user", doc["id"], f"{body.name} ({emp})")
     return doc
 
 
@@ -502,9 +482,6 @@ async def delete_user(uid: str, admin=Depends(require_admin)):
     res = await db.users.delete_one({"id": uid})
     if res.deleted_count == 0:
         raise HTTPException(404, "غير موجود")
-    if target:
-        await _audit(admin["id"], admin["name"], "delete", "user", uid,
-                     f"{target.get('name','')} ({target.get('employee_number','')})")
     return {"ok": True}
 
 
@@ -591,7 +568,6 @@ async def create_machine(body: MachineCreate, admin=Depends(require_admin)):
            "power_consumption": body.power_consumption or "",
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.machines.insert_one(doc); doc.pop("_id", None)
-    await _audit(admin["id"], admin["name"], "create", "machine", doc["id"], f"مكينة {num}")
     return doc
 
 
@@ -733,7 +709,6 @@ async def delete_machine(iid: str, admin=Depends(require_admin)):
     m = await db.machines.find_one({"id": iid}, {"_id": 0, "number": 1})
     res = await db.machines.delete_one({"id": iid})
     if res.deleted_count == 0: raise HTTPException(404, "المكينة غير موجودة")
-    await _audit(admin["id"], admin["name"], "delete", "machine", iid, f"مكينة {m.get('number','') if m else ''}")
     return {"ok": True}
 
 
@@ -823,7 +798,6 @@ async def create_question(body: QuestionCreate, admin=Depends(require_admin)):
     if body.section:
         doc["section"] = body.section
     await db.questions.insert_one(doc); doc.pop("_id", None)
-    await _audit(admin["id"], admin["name"], "create", "question", doc["id"], body.text[:80])
     return doc
 
 
@@ -846,8 +820,6 @@ async def delete_question(qid: str, admin=Depends(require_admin)):
     q = await db.questions.find_one({"id": qid}, {"_id": 0, "text": 1})
     res = await db.questions.delete_one({"id": qid})
     if res.deleted_count == 0: raise HTTPException(404, "غير موجود")
-    await _audit(admin["id"], admin["name"], "delete", "question", qid,
-                 (q.get("text","")[:80] if q else ""))
     return {"ok": True}
 
 
@@ -2038,8 +2010,6 @@ async def create_breakdown(body: BreakdownCreate, user=Depends(get_current_user)
     }
     await db.breakdowns.insert_one(doc)
     doc.pop("_id", None)
-    await _audit(user["id"], user["name"], "create", "breakdown", doc["id"],
-                 f"مكينة {machine['number']} — {body.brief_description[:60]}")
     await _notify("new_breakdown",
                   f"عطل جديد — مكينة {machine['number']}",
                   f"سجّل {user['name']} عطلاً: {body.brief_description[:80]}",
@@ -2052,7 +2022,6 @@ async def list_breakdowns(
     machine_number: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
-    status: Optional[str] = None,
     technician_id: Optional[str] = None,
     user=Depends(get_current_user),
 ):
@@ -2066,8 +2035,6 @@ async def list_breakdowns(
             q["technician_id"] = technician_id
     if machine_number:
         q["machine_number"] = {"$regex": f"^{re.escape(machine_number)}", "$options": "i"}
-    if status:
-        q["status"] = status
     if date_from or date_to:
         rng: dict = {}
         if date_from: rng["$gte"] = date_from
@@ -2075,24 +2042,6 @@ async def list_breakdowns(
         q["created_at"] = rng
     docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     return docs
-
-
-@api.patch("/breakdowns/{bid}/resolve")
-async def resolve_breakdown(bid: str, admin=Depends(require_admin)):
-    doc = await db.breakdowns.find_one({"id": bid})
-    if not doc:
-        raise HTTPException(404, "غير موجود")
-    await db.breakdowns.update_one(
-        {"id": bid},
-        {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc).isoformat()}},
-    )
-    await _audit(admin["id"], admin["name"], "resolve", "breakdown", bid,
-                 f"مكينة {doc.get('machine_number','')} — {doc.get('brief_description','')[:60]}")
-    await _notify("breakdown_resolved",
-                  f"تم حل العطل — مكينة {doc.get('machine_number','')}",
-                  f"أغلق {admin['name']} عطل: {doc.get('brief_description','')[:80]}",
-                  bid)
-    return {"ok": True}
 
 
 @api.delete("/breakdowns/{bid}")
@@ -2155,15 +2104,12 @@ async def export_breakdowns_excel(
     machine_number: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
-    status: Optional[str] = None,
     _=Depends(require_admin),
 ):
     _rl_check_export(request.client.host)
     q: dict = {}
     if machine_number:
         q["machine_number"] = {"$regex": f"^{re.escape(machine_number)}", "$options": "i"}
-    if status:
-        q["status"] = status
     if date_from or date_to:
         rng: dict = {}
         if date_from: rng["$gte"] = date_from
@@ -2175,10 +2121,6 @@ async def export_breakdowns_excel(
     PURPLE_LIGHT = "F3E8F3"
     WHITE        = "FFFFFF"
     HEADER_BG    = "4A1442"
-    GREEN_BG     = "E8F5E9"
-    GREEN_FG     = "2E7D32"
-    AMBER_BG     = "FFF8E1"
-    AMBER_FG     = "F57F17"
     thin  = Side(style="thin",   color="CCCCCC")
     thick = Side(style="medium", color=PURPLE)
 
@@ -2191,9 +2133,9 @@ async def export_breakdowns_excel(
         )
 
     HEADERS    = ["#", "Date", "Machine Number", "Downtime Reason", "Technician",
-                  "Start Time", "End Time", "Duration", "Repair Description", "Status"]
+                  "Start Time", "End Time", "Duration", "Repair Description"]
     COL_WIDTHS = [5,   20,     16,               34,                22,
-                  13,         13,        13,         40,                  13]
+                  13,         13,        13,         40]
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -2266,7 +2208,6 @@ async def export_breakdowns_excel(
         row = 6 + ri
         ws.row_dimensions[row].height = 22
         bg    = PURPLE_LIGHT if ri % 2 == 0 else WHITE
-        stat  = doc.get("status", "")
         dur   = _calc_duration(doc.get("start_time", ""), doc.get("end_time", ""))
         mname = doc.get("machine_number", "")
         if doc.get("machine_name"):
@@ -2281,7 +2222,6 @@ async def export_breakdowns_excel(
             doc.get("end_time", "")   or "—",
             dur,
             doc.get("repair_description", "") or "—",
-            "Resolved" if stat == "resolved" else "Open",
         ]
         for ci, val in enumerate(values, 1):
             cl   = get_column_letter(ci)
@@ -2289,7 +2229,7 @@ async def export_breakdowns_excel(
             cell.value = val
             cell.font  = Font(name="Arial", size=10)
             cell.alignment = Alignment(
-                horizontal="center" if ci in (1, 6, 7, 8, 10) else "left",
+                horizontal="center" if ci in (1, 6, 7, 8) else "left",
                 vertical="center", wrap_text=(ci in (4, 9)),
             )
             cell.border = Border(
@@ -2297,14 +2237,7 @@ async def export_breakdowns_excel(
                 left=thick if ci == 1 else thin,
                 right=thick if ci == len(HEADERS) else thin,
             )
-            if ci == 10:
-                if stat == "resolved":
-                    cell.font = Font(name="Arial", bold=True, size=10, color=GREEN_FG)
-                    cell.fill = PatternFill("solid", fgColor=GREEN_BG)
-                else:
-                    cell.font = Font(name="Arial", bold=True, size=10, color=AMBER_FG)
-                    cell.fill = PatternFill("solid", fgColor=AMBER_BG)
-            elif ci == 8:
+            if ci == 8:
                 cell.font = Font(name="Arial", bold=True, size=10, color="6B2D6B")
                 cell.fill = PatternFill("solid", fgColor=bg)
             else:
@@ -2742,18 +2675,9 @@ async def get_maintenance_analytics(
     has_dur = [d for d in all_docs if d["_minutes"] > 0]
     mttr_min = (sum(d["_minutes"] for d in has_dur) / len(has_dur)) if has_dur else 0
 
-    # MTBF: use first-to-last breakdown period when >1, else use filter period
+    # MTBF: always use the filter period so total downtime can never exceed it
     if total_breakdowns >= 1:
-        if total_breakdowns > 1:
-            try:
-                dt1 = datetime.fromisoformat(all_docs[0]["created_at"].replace("Z", "+00:00"))
-                dt2 = datetime.fromisoformat(all_docs[-1]["created_at"].replace("Z", "+00:00"))
-                period_h = max((dt2 - dt1).total_seconds() / 3600, 1.0)
-            except Exception:
-                period_h = _fallback_h
-        else:
-            period_h = _fallback_h  # single breakdown → use selected filter period
-        mtbf_h = max((period_h - total_minutes / 60) / total_breakdowns, 0.0)
+        mtbf_h = max((_fallback_h - total_minutes / 60) / total_breakdowns, 0.0)
     else:
         mtbf_h = 0.0
 
@@ -2776,12 +2700,12 @@ async def get_maintenance_analytics(
           "downtime_hours": round(v["minutes"] / 60, 1)}
          for k, v in machine_stats.items()],
         key=lambda x: x["count"], reverse=True,
-    )[:10]
+    )[:5]
 
     top_reasons = sorted(
         [{"reason": k, "count": v} for k, v in reason_counts.items()],
         key=lambda x: x["count"], reverse=True,
-    )[:8]
+    )[:5]
 
     # Preventive maintenance count for the filtered period
     pm_q: dict = {"category": "preventive"}
@@ -2898,8 +2822,8 @@ async def export_analytics_excel(
     thin  = Side(style="thin",   color="CCCCCC")
     thick = Side(style="medium", color=PURPLE)
 
-    HEADERS    = ["#", "Date", "Machine", "Specialty", "Reason", "Technician", "Start", "End", "Duration (min)", "Status"]
-    COL_WIDTHS = [5,   16,     18,        14,           32,       20,           12,      12,    16,               12]
+    HEADERS    = ["#", "Date", "Machine", "Specialty", "Reason", "Technician", "Start", "End", "Duration (min)"]
+    COL_WIDTHS = [5,   16,     18,        14,           32,       20,           12,      12,    16]
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -2967,14 +2891,13 @@ async def export_analytics_excel(
             doc.get("start_time","") or "—",
             doc.get("end_time","")   or "—",
             doc["_minutes"] if doc["_minutes"] > 0 else "—",
-            "Resolved" if doc.get("status") == "resolved" else "Open",
         ]
         for ci, val in enumerate(vals, 1):
             cell = ws[f"{get_column_letter(ci)}{row}"]
             cell.value = val
             cell.font  = Font(name="Arial", size=10)
             cell.fill  = PatternFill("solid", fgColor=bg)
-            cell.alignment = Alignment(horizontal="center" if ci in (1,9,10) else "left", vertical="center")
+            cell.alignment = Alignment(horizontal="center" if ci in (1, 9) else "left", vertical="center")
             cell.border = Border(top=thin, bottom=thin,
                                  left=thick if ci==1 else thin,
                                  right=thick if ci==len(HEADERS) else thin)
@@ -3059,7 +2982,7 @@ async def export_analytics_pdf(
     elements.append(Paragraph(f"Maintenance Analytics Report — {period_lbl}", title_st))
     elements.append(Paragraph(f"Total Records: {len(docs)}   |   Specialty: {specialty or 'All'}", sub_st))
 
-    hdrs = ["#", "Date", "Machine", "Specialty", "Reason", "Technician", "Duration (min)", "Status"]
+    hdrs = ["#", "Date", "Machine", "Specialty", "Reason", "Technician", "Duration (min)"]
     table_data = [hdrs]
     for i, d in enumerate(docs, 1):
         table_data.append([
@@ -3070,9 +2993,8 @@ async def export_analytics_pdf(
             d.get("brief_description",""),
             d.get("technician_name",""),
             str(d["_minutes"]) if d["_minutes"] > 0 else "—",
-            "Resolved" if d.get("status") == "resolved" else "Open",
         ])
-    col_w = [1*cm, 2.5*cm, 3*cm, 2.5*cm, 6*cm, 4*cm, 3*cm, 2.5*cm]
+    col_w = [1*cm, 2.5*cm, 3*cm, 2.5*cm, 6*cm, 4*cm, 3*cm]
     tbl = Table(table_data, colWidths=col_w, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, 0),  HEADER_C),
@@ -3194,7 +3116,6 @@ async def stats_monthly_breakdown(_=Depends(require_admin)):
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
     docs = await db.breakdowns.find({"created_at": {"$gte": month_start}}, {"_id": 0}).to_list(1000)
     total = len(docs)
-    resolved = sum(1 for d in docs if d.get("status") == "resolved")
     cause_counts: dict = defaultdict(int)
     total_minutes = 0
     for d in docs:
@@ -3214,8 +3135,6 @@ async def stats_monthly_breakdown(_=Depends(require_admin)):
     )[:5]
     return {
         "total": total,
-        "resolved": resolved,
-        "open": total - resolved,
         "downtime_hours": round(total_minutes / 60, 1),
         "top_causes": top_causes,
     }
@@ -3287,34 +3206,7 @@ async def update_work_schedule(body: WorkScheduleBody, user=Depends(require_admi
         {"$set": {"type": "work_schedule", "hours_per_day": body.hours_per_day, "off_days": body.off_days}},
         upsert=True,
     )
-    await _audit(user["id"], user["name"], "update", "work_schedule", "work_schedule",
-                 f"ساعات العمل: {body.hours_per_day}h — أيام الإجازة: {body.off_days}")
     return {"hours_per_day": body.hours_per_day, "off_days": body.off_days}
-
-
-# ---------- Audit Log ----------
-@api.get("/audit-logs")
-async def list_audit_logs(
-    page: int = 1,
-    limit: int = 50,
-    resource_type: Optional[str] = None,
-    actor_id: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    _=Depends(require_admin),
-):
-    q: dict = {}
-    if resource_type: q["resource_type"] = resource_type
-    if actor_id: q["actor_id"] = actor_id
-    if date_from or date_to:
-        rng: dict = {}
-        if date_from: rng["$gte"] = date_from
-        if date_to: rng["$lte"] = date_to + "T23:59:59"
-        q["created_at"] = rng
-    skip = (page - 1) * limit
-    total = await db.audit_logs.count_documents(q)
-    items = await db.audit_logs.find(q, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    return {"total": total, "page": page, "items": items}
 
 
 # ---------- Seed ----------
@@ -3394,9 +3286,6 @@ async def startup():
         await db[c].create_index("sort_order")
     await db.registration_requests.create_index("status")
     await db.registration_requests.create_index("expires_at", expireAfterSeconds=0, sparse=True)
-    await db.audit_logs.create_index("created_at", expireAfterSeconds=90 * 24 * 3600)
-    await db.audit_logs.create_index("actor_id")
-    await db.audit_logs.create_index([("resource_type", 1), ("created_at", -1)])
     await db.notifications.create_index("created_at", expireAfterSeconds=30 * 24 * 3600)
     await db.notifications.create_index("is_read")
 
@@ -3587,7 +3476,6 @@ async def startup():
     await db.preventive_plans.create_index("id", unique=True)
     await db.preventive_plans.create_index([("scheduled_date", 1), ("machine_id", 1)])
     await db.breakdowns.create_index("id", unique=True)
-    await db.breakdowns.create_index("status")
     await db.breakdowns.create_index("created_at")
     await db.breakdowns.create_index("technician_id")
 

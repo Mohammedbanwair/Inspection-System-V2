@@ -18,12 +18,11 @@ import BreakdownAdmin from "./admin/Breakdown";
 import MDBReadings from "./admin/MDBReadings";
 import Analytics from "./admin/Analytics";
 import Permissions from "./admin/Permissions";
-import AuditLog from "./admin/AuditLog";
 import WorkSchedule from "./admin/WorkSchedule";
 import {
   ChartBar, Wrench, Question, UsersThree, ClipboardText, Snowflake, ListChecks,
   WarningOctagon, UserPlus, Drop, Clipboard, CalendarCheck, Lightning,
-  CaretDown, CaretRight, List, X, Gauge, TrendUp, ShieldCheck, ClockCounterClockwise,
+  CaretDown, CaretRight, List, X, Gauge, TrendUp, ShieldCheck,
   CalendarBlank,
 } from "@phosphor-icons/react";
 
@@ -56,9 +55,8 @@ const NAV = [
       { key: "questions",   label_key: "tab_questions",   Icon: Question,               Component: Questions },
       { key: "users",       label_key: "tab_users",       Icon: UsersThree,             Component: Users },
       { key: "requests",    label_key: "tab_requests",    Icon: UserPlus,               Component: RegistrationRequests },
-      { key: "permissions", label_key: "tab_permissions", Icon: ShieldCheck,            Component: Permissions },
-      { key: "audit-log",       label_key: "tab_audit_log",       Icon: ClockCounterClockwise, Component: AuditLog },
-      { key: "work-schedule",   label_key: "tab_work_schedule",   Icon: CalendarBlank,         Component: WorkSchedule },
+      { key: "permissions", label_key: "tab_permissions", Icon: ShieldCheck,  Component: Permissions },
+      { key: "work-schedule",   label_key: "tab_work_schedule",   Icon: CalendarBlank, Component: WorkSchedule },
     ],
   },
 ];

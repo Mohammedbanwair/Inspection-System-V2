@@ -3,7 +3,7 @@ import { api, formatApiError, downloadBlob } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import {
-  CheckCircle, Trash, Lightning, WarningCircle, CheckSquare, Calendar,
+  Trash, Calendar, Gauge,
   Gear, Plus, PencilSimple, X, FileXls,
 } from "@phosphor-icons/react";
 import {
@@ -35,6 +35,15 @@ function calcDuration(start, end) {
   let diff = e - s;
   if (diff < 0) diff += 1440;
   return `${Math.floor(diff / 60)}h ${String(diff % 60).padStart(2, "0")}m`;
+}
+
+function calcDurationMins(start, end) {
+  if (!start || !end) return 0;
+  if (start.includes("T")) {
+    const diff = Math.round((new Date(end) - new Date(start)) / 60000);
+    return diff > 0 ? diff : 0;
+  }
+  return 0;
 }
 
 function fmtStartEnd(str) {
@@ -184,7 +193,6 @@ export default function Breakdown() {
   const [machineId, setMachineId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [status, setStatus] = useState("");
   const [showReasons, setShowReasons] = useState(false);
 
   useEffect(() => {
@@ -199,7 +207,6 @@ export default function Breakdown() {
       if (sel) params.machine_number = sel.number;
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
-      if (status) params.status = status;
       const { data } = await api.get("/breakdowns", { params });
       setList(data);
     } catch (e) {
@@ -213,16 +220,8 @@ export default function Breakdown() {
 
   const apply = (e) => { e.preventDefault(); load(); };
   const reset = () => {
-    setMachineId(""); setDateFrom(""); setDateTo(""); setStatus("");
+    setMachineId(""); setDateFrom(""); setDateTo("");
     setTimeout(load, 0);
-  };
-
-  const resolve = async (id) => {
-    try {
-      await api.patch(`/breakdowns/${id}/resolve`);
-      toast.success("✓");
-      load();
-    } catch (e) { toast.error(formatApiError(e)); }
   };
 
   const del = async (id) => {
@@ -242,7 +241,6 @@ export default function Breakdown() {
       if (sel)      params.append("machine_number", sel.number);
       if (dateFrom) params.append("date_from", dateFrom);
       if (dateTo)   params.append("date_to", dateTo);
-      if (status)   params.append("status", status);
       await downloadBlob(
         `/breakdowns/export/excel?${params}`,
         `machine_downtime_${dateFrom || "all"}_${dateTo || "all"}.xlsx`
@@ -252,10 +250,9 @@ export default function Breakdown() {
   };
 
   const total    = list.length;
-  const open     = list.filter((b) => b.status === "submitted").length;
-  const resolved = list.filter((b) => b.status === "resolved").length;
   const todayStr = new Date().toDateString();
   const today    = list.filter((b) => new Date(b.created_at).toDateString() === todayStr).length;
+  const totalDowntimeMins = list.reduce((sum, b) => sum + (calcDurationMins(b.start_time, b.end_time) || 0), 0);
 
   // Chart data — daily counts (last 14 days with data)
   const dailyCounts = {};
@@ -285,9 +282,9 @@ export default function Breakdown() {
       {/* Stats + Charts */}
       <div className="grid grid-cols-3 gap-3 mb-4">
         {[
-          { label: t("open_breakdowns"),     value: open,     Icon: WarningCircle, color: "text-amber-600" },
-          { label: t("resolved_breakdowns"), value: resolved, Icon: CheckSquare,   color: "text-emerald-600" },
-          { label: t("today_breakdowns"),    value: today,    Icon: Calendar,      color: "text-slate-900" },
+          { label: t("total_breakdowns"),       value: total, Icon: Gauge,    color: "text-[#6B2D6B]" },
+          { label: t("today_breakdowns"),       value: today, Icon: Calendar, color: "text-slate-900" },
+          { label: ar ? "ساعات التوقف" : "Downtime Hours", value: `${Math.round(totalDowntimeMins / 60 * 10) / 10}h`, Icon: Gauge, color: "text-amber-600" },
         ].map(({ label, value, Icon, color }) => (
           <div key={label} className="bg-white border border-slate-200 p-4">
             <div className="flex items-center gap-2 text-slate-500 mb-1">
@@ -364,7 +361,7 @@ export default function Breakdown() {
 
       {/* Filters */}
       <form onSubmit={apply} className="bg-white border border-slate-200 p-4 sm:p-5 mb-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           <select
             value={machineId}
             onChange={(e) => setMachineId(e.target.value)}
@@ -381,12 +378,6 @@ export default function Breakdown() {
                  dir="ltr" className="h-11 px-3 border border-slate-200" />
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
                  dir="ltr" className="h-11 px-3 border border-slate-200" />
-          <select value={status} onChange={(e) => setStatus(e.target.value)}
-                  className="h-11 px-3 border border-slate-200 bg-white">
-            <option value="">{t("all_statuses")}</option>
-            <option value="submitted">{t("bd_open")}</option>
-            <option value="resolved">{t("resolved")}</option>
-          </select>
           <div className="flex gap-2">
             <button type="submit"
                     className="h-11 px-4 bg-slate-900 text-white font-semibold hover:bg-slate-800 flex-1 text-sm">
@@ -412,7 +403,7 @@ export default function Breakdown() {
       </div>
 
       <div className="bg-white border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm min-w-[700px]">
+        <table className="w-full text-sm min-w-[600px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="text-start px-4 py-3 font-semibold">{t("date")}</th>
@@ -422,18 +413,17 @@ export default function Breakdown() {
               <th className="text-start px-4 py-3 font-semibold">{t("start_time")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("end_time")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("downtime_duration")}</th>
-              <th className="text-start px-4 py-3 font-semibold">{t("status")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("actions")}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan="9" className="text-center text-slate-400 py-8">
+              <tr><td colSpan="8" className="text-center text-slate-400 py-8">
                 <div className="inline-block w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
               </td></tr>
             )}
             {!loading && list.length === 0 && (
-              <tr><td colSpan="9" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
+              <tr><td colSpan="8" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
             )}
             {list.map((b, i) => (
               <tr key={b.id} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
@@ -463,32 +453,12 @@ export default function Breakdown() {
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-1 text-xs font-semibold ${
-                    b.status === "resolved"
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-amber-100 text-amber-700"
-                  }`}>
-                    {b.status === "resolved" ? t("resolved") : t("bd_open")}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    {b.status !== "resolved" && (
-                      <button
-                        onClick={() => resolve(b.id)}
-                        className="h-9 px-3 border border-emerald-300 text-emerald-700 hover:bg-emerald-50 flex items-center gap-1 text-xs font-semibold"
-                      >
-                        <CheckCircle size={14} weight="bold" />
-                        {t("resolve")}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => del(b.id)}
-                      className="h-9 w-9 border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center"
-                    >
-                      <Trash size={14} />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => del(b.id)}
+                    className="h-9 w-9 border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center"
+                  >
+                    <Trash size={14} />
+                  </button>
                 </td>
               </tr>
             ))}
