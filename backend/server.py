@@ -2650,10 +2650,10 @@ async def get_maintenance_analytics(
     if machine_id:
         q["machine_id"] = machine_id
 
-    # Fallback period in hours (used when only 1 breakdown exists)
+    # Period in hours — +1 day so the end date is fully included (e.g. May 1–31 = 31 days)
     try:
         from datetime import date as _date
-        _fallback_h = max((_date.fromisoformat(_p_end) - _date.fromisoformat(_p_start)).days * 24, 24.0)
+        _fallback_h = max((_date.fromisoformat(_p_end) - _date.fromisoformat(_p_start)).days * 24 + 24, 24.0)
     except Exception:
         _fallback_h = 720.0
 
@@ -2675,9 +2675,18 @@ async def get_maintenance_analytics(
     has_dur = [d for d in all_docs if d["_minutes"] > 0]
     mttr_min = (sum(d["_minutes"] for d in has_dur) / len(has_dur)) if has_dur else 0
 
-    # MTBF: always use the filter period so total downtime can never exceed it
+    # For fleet-wide queries, scale the period by the number of machines so that
+    # MTBF = avg time between failures per machine (not per the whole fleet).
+    # When a single machine is selected, n_machines = 1 and the formula is unchanged.
+    if machine_id:
+        _n_machines = 1
+    else:
+        _n_machines = max(await db.machines.count_documents({}), 1)
+    _effective_period_h = _fallback_h * _n_machines
+
+    # MTBF = (total uptime across all machines) / number of failures
     if total_breakdowns >= 1:
-        mtbf_h = max((_fallback_h - total_minutes / 60) / total_breakdowns, 0.0)
+        mtbf_h = max((_effective_period_h - total_minutes / 60) / total_breakdowns, 0.0)
     else:
         mtbf_h = 0.0
 

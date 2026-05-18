@@ -210,9 +210,9 @@ export default function Analytics() {
             <KpiCard label={t("kpi_mttr")}             value={fmtMttr(ov.mttr_minutes)} sub="Mean Time To Repair" />
             <KpiCard label={t("kpi_mtbf")}             value={ov.mtbf_hours ? `${ov.mtbf_hours}h` : "—"} sub="Mean Time Between Failures" />
             <KpiCard label={t("kpi_availability")}
-                     value={ov.availability_pct != null && ov.availability_pct > 0 ? `${ov.availability_pct}%` : "—"}
+                     value={ov.availability_pct != null && (ov.total_breakdowns ?? 0) > 0 ? `${ov.availability_pct}%` : "—"}
                      sub="MTBF / (MTBF + MTTR)"
-                     accent={ov.availability_pct >= 95 ? "#10B981" : ov.availability_pct >= 80 ? "#F59E0B" : ov.availability_pct > 0 ? "#EF4444" : undefined} />
+                     accent={ov.availability_pct >= 95 ? "#10B981" : ov.availability_pct >= 80 ? "#F59E0B" : ov.availability_pct >= 0 ? "#EF4444" : undefined} />
             <KpiCard label={t("kpi_most_failed")}      value={ov.most_failed_machine || "—"} accent={PURPLE}
                      sub={ar ? "أعلى عدد تعطلات" : "highest failure count"} />
           </div>
