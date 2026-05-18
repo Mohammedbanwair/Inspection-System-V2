@@ -94,7 +94,7 @@ export default function Failures() {
     <div data-testid="failures-panel">
 
       {/* Step-by-step filter */}
-      <div className="bg-white border border-slate-200 p-4 sm:p-5 mb-4 space-y-3">
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 sm:p-5 mb-4 space-y-3">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
 
           {/* Step 1: Section */}
@@ -178,7 +178,7 @@ export default function Failures() {
 
       {/* Results header */}
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
           <WarningOctagon size={20} weight="bold" className="text-red-500" />
           {t("open_failures")} ({list.length})
         </h3>
@@ -190,14 +190,14 @@ export default function Failures() {
           <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
         </div>
       ) : grouped.length === 0 ? (
-        <div className="bg-emerald-50 border border-emerald-200 p-8 text-center text-emerald-700 font-semibold">
+        <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-8 text-center text-emerald-700 dark:text-emerald-400 font-semibold">
           ✓ {t("no_open_failures")}
         </div>
       ) : (
         <div className="space-y-4">
           {grouped.map((g) => (
-            <div key={`${g.target_type}-${g.target_number}`} className="bg-white border border-slate-200">
-              <div className="bg-slate-900 text-white px-4 sm:px-5 py-3 flex items-center justify-between gap-2">
+            <div key={`${g.target_type}-${g.target_number}`} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+              <div className="bg-slate-900 dark:bg-slate-700 text-white px-4 sm:px-5 py-3 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                   <span className="px-2 py-1 text-xs font-semibold bg-white/10 shrink-0">
                     {typeLabel(g.target_type)}

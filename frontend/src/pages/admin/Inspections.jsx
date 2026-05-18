@@ -10,12 +10,17 @@ const CAT_KEY = {
   cooling_tower: "cat_cooling_tower", preventive: "cat_preventive",
 };
 
+const PAGE_SIZES = [25, 50, 100];
+
 export default function Inspections() {
   const { t, lang } = useI18n();
   const [list, setList] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [viewing, setViewing] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Step-by-step filter state
   const [spec, setSpec]         = useState("");  // "electrical" | "mechanical"
@@ -111,11 +116,12 @@ export default function Inspections() {
 
   const qMap = useMemo(() => Object.fromEntries(questions.map((q) => [q.id, q])), [questions]);
 
-  const apply = (e) => { e.preventDefault(); load(); };
+  const apply = (e) => { e.preventDefault(); setPage(1); load(); };
 
   const reset = () => {
     setSpec(""); setTType(""); setSubGroup(""); setTargetNum("");
     setDateFrom(""); setDateTo(""); setItems([]);
+    setSearch(""); setPage(1);
     setTimeout(load, 0);
   };
 
@@ -161,6 +167,19 @@ export default function Inspections() {
   );
 
   const ar = lang === "ar";
+
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? list.filter((r) =>
+        (r.target_number  || "").toLowerCase().includes(q) ||
+        (r.technician_name|| "").toLowerCase().includes(q) ||
+        (r.category       || "").toLowerCase().includes(q)
+      )
+    : list;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage   = Math.min(page, totalPages);
+  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
     <div data-testid="inspections-panel">
@@ -264,10 +283,21 @@ export default function Inspections() {
         </div>
       </form>
 
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-bold text-slate-900">{t("results")} ({list.length})</h3>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2 flex-1">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder={ar ? "🔍  بحث بالرقم أو الفني..." : "🔍  Search by number or technician..."}
+            className="h-10 px-3 border border-slate-200 text-sm flex-1 max-w-xs focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+          <span className="text-xs text-slate-500 shrink-0">
+            {filtered.length} {ar ? "نتيجة" : "results"}
+          </span>
+        </div>
         <button onClick={exportExcel}
-                className="h-10 px-4 bg-[#1D6F42] text-white font-semibold flex items-center gap-2 hover:bg-[#155734]"
+                className="h-10 px-4 bg-[#1D6F42] text-white font-semibold flex items-center gap-2 hover:bg-[#155734] shrink-0"
                 data-testid="export-excel-button">
           <FileXls size={16} weight="bold" /> {ar ? "تصدير Excel" : "Export Excel"}
         </button>
@@ -292,10 +322,10 @@ export default function Inspections() {
                 <div className="inline-block w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
               </td></tr>
             )}
-            {!loading && list.length === 0 && (
+            {!loading && filtered.length === 0 && (
               <tr><td colSpan="7" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
             )}
-            {list.map((r, i) => {
+            {paginated.map((r, i) => {
               const fails = (r.answers || []).filter((a) => a.answer === false).length;
               return (
                 <tr key={r.id} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
@@ -334,6 +364,35 @@ export default function Inspections() {
             })}
           </tbody>
         </table>
+        {/* Pagination */}
+        {filtered.length > pageSize && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-500">
+            <span>
+              {ar
+                ? `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, filtered.length)} من ${filtered.length}`
+                : `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, filtered.length)} of ${filtered.length}`}
+            </span>
+            <div className="flex gap-1">
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage === 1}
+                      className="h-8 w-8 flex items-center justify-center border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-40">‹</button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const pg = Math.max(1, Math.min(totalPages - 4, safePage - 2)) + i;
+                return (
+                  <button key={pg} onClick={() => setPage(pg)}
+                          className={`h-8 w-8 flex items-center justify-center border rounded text-xs font-semibold ${
+                            pg === safePage ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 hover:bg-slate-50"
+                          }`}>{pg}</button>
+                );
+              })}
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                      className="h-8 w-8 flex items-center justify-center border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-40">›</button>
+            </div>
+            <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                    className="border border-slate-200 rounded px-2 py-1 text-xs">
+              {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} {ar ? "/ صفحة" : "/ page"}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       {viewing && (

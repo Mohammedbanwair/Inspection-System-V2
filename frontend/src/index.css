@@ -334,3 +334,81 @@ body {
 
 /* ── Notification bell dropdown ──────────────────────────────── */
 .dark .bg-blue-50\/40 { background-color: rgba(59,130,246,0.06) !important; }
+
+/* ── Recharts dark mode ──────────────────────────────────────── */
+.dark .recharts-tooltip-wrapper .recharts-default-tooltip {
+    background-color: var(--dm-surface) !important;
+    border-color: var(--dm-border-md)   !important;
+    color: var(--dm-text-1)             !important;
+}
+.dark .recharts-cartesian-grid line { stroke: var(--dm-raised) !important; }
+.dark .recharts-text,
+.dark .recharts-cartesian-axis-tick-value { fill: var(--dm-text-2) !important; }
+.dark .recharts-legend-item-text { color: var(--dm-text-2) !important; }
+.dark .recharts-tooltip-cursor { fill: rgba(255,255,255,0.04) !important; }
+
+/* ── Modal / dialog overlays ─────────────────────────────────── */
+.dark .fixed.inset-0.bg-slate-900\/60 {
+    background-color: rgba(0,0,0,0.75) !important;
+}
+.dark .bg-white.border-slate-200.w-full.max-w-3xl {
+    background-color: var(--dm-surface) !important;
+    border-color: var(--dm-border-md)   !important;
+}
+.dark .sticky.top-0.bg-white {
+    background-color: var(--dm-surface) !important;
+}
+
+/* ── Collapsible / accordion panels ─────────────────────────── */
+.dark .hover\:bg-slate-50:hover {
+    background-color: var(--dm-raised) !important;
+}
+
+/* ── Drag-to-reorder hint ────────────────────────────────────── */
+.dark .cursor-grab:active { background-color: var(--dm-hover) !important; }
+.dark .hover\:bg-blue-50\/30:hover { background-color: rgba(59,130,246,0.06) !important; }
+
+/* ─────────────────────────────────────────────────────────────
+   MOBILE — Responsive improvements
+   ─────────────────────────────────────────────────────────── */
+
+/* Ensure all tables are scrollable on small screens */
+.overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+/* Minimum font-size for mobile readability */
+@media (max-width: 640px) {
+    table { font-size: 13px; }
+    input, select, textarea { font-size: 14px !important; } /* prevent iOS zoom */
+    .text-4xl { font-size: 2rem !important; }
+    .text-3xl { font-size: 1.6rem !important; }
+
+    /* Tighter card padding on mobile */
+    .p-5 { padding: 1rem !important; }
+}
+
+/* Charts responsive */
+@media (max-width: 640px) {
+    .recharts-wrapper { font-size: 10px; }
+}
+
+/* Modal full-screen on mobile */
+@media (max-width: 640px) {
+    .fixed.inset-0 > .bg-white,
+    .fixed.inset-0 > div > .bg-white {
+        max-height: 95vh !important;
+        border-radius: 0 !important;
+    }
+}
+
+/* Inspection form seg buttons — better touch targets on mobile */
+@media (max-width: 640px) {
+    .seg-btn { min-height: 56px; font-size: 13px; }
+}
+
+/* Fix pagination wrapping on mobile */
+@media (max-width: 480px) {
+    .flex.items-center.justify-between.px-4.py-3 {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+}

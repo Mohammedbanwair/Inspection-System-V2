@@ -97,7 +97,7 @@ export default function Users() {
 
       {showForm && (
         <form onSubmit={save}
-              className="bg-white border border-slate-200 p-5 mb-4 grid grid-cols-1 md:grid-cols-6 gap-3 fade-in"
+              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-5 mb-4 grid grid-cols-1 md:grid-cols-6 gap-3 fade-in rounded-lg"
               data-testid="user-form">
           <input required type="text" placeholder={t("employee_number")} value={form.employee_number}
                  disabled={!!editing} maxLength={20}
@@ -141,7 +141,7 @@ export default function Users() {
         </form>
       )}
 
-      <div className="bg-white border border-slate-200 overflow-x-auto">
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-x-auto rounded-lg">
         <table className="w-full text-sm min-w-[520px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
