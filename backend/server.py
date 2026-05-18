@@ -290,6 +290,11 @@ class BreakdownCreate(BaseModel):
     repair_description: Optional[str] = ""
     start_time: Optional[str] = ""
     end_time: Optional[str] = ""
+    is_planned: Optional[bool] = None  # None = auto-detect from brief_description
+
+
+class BreakdownPlannedUpdate(BaseModel):
+    is_planned: bool
 
 
 class DowntimeReasonCreate(BaseModel):
@@ -1987,13 +1992,23 @@ def _calc_duration(start_str: str, end_str: str) -> str:
 
 
 # ---------- Breakdowns ----------
+_PLANNED_KEYWORDS = re.compile(
+    r'PREVENTIVE|صيانة\s*دورية|PM\b|PLANNED|SCHEDULED|وقائية|مجدولة',
+    re.IGNORECASE,
+)
+
+def _auto_is_planned(brief_desc: str) -> bool:
+    return bool(_PLANNED_KEYWORDS.search(brief_desc or ""))
+
+
 @api.post("/breakdowns")
 async def create_breakdown(body: BreakdownCreate, user=Depends(get_current_user)):
-    if user["role"] not in ("admin", "technician"):
+    if user["role"] not in ("admin", "technician", "helper"):
         raise HTTPException(403, "غير مصرح")
     machine = await db.machines.find_one({"id": body.machine_id}, {"_id": 0})
     if not machine:
         raise HTTPException(404, "المكينة غير موجودة")
+    is_planned = body.is_planned if body.is_planned is not None else _auto_is_planned(body.brief_description)
     doc = {
         "id": str(uuid.uuid4()),
         "machine_id": body.machine_id,
@@ -2005,6 +2020,8 @@ async def create_breakdown(body: BreakdownCreate, user=Depends(get_current_user)
         "end_time": body.end_time or "",
         "technician_id": user["id"],
         "technician_name": user["name"],
+        "submitter_role": user["role"],
+        "is_planned": is_planned,
         "status": "submitted",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -2025,10 +2042,10 @@ async def list_breakdowns(
     technician_id: Optional[str] = None,
     user=Depends(get_current_user),
 ):
-    if user["role"] not in ("admin", "technician"):
+    if user["role"] not in ("admin", "technician", "helper"):
         raise HTTPException(403, "غير مصرح")
     q: dict = {}
-    if user["role"] == "technician":
+    if user["role"] in ("technician", "helper"):
         q["technician_id"] = user["id"]
     else:
         if technician_id:
@@ -2048,6 +2065,14 @@ async def list_breakdowns(
 async def delete_breakdown(bid: str, _=Depends(require_admin)):
     res = await db.breakdowns.delete_one({"id": bid})
     if res.deleted_count == 0:
+        raise HTTPException(404, "غير موجود")
+    return {"ok": True}
+
+
+@api.patch("/breakdowns/{bid}/planned")
+async def update_breakdown_planned(bid: str, body: BreakdownPlannedUpdate, _=Depends(require_admin)):
+    res = await db.breakdowns.update_one({"id": bid}, {"$set": {"is_planned": body.is_planned}})
+    if res.matched_count == 0:
         raise HTTPException(404, "غير موجود")
     return {"ok": True}
 
@@ -2765,6 +2790,9 @@ async def get_maintenance_analytics(
     mtbf_h_safe = max(mtbf_h, 0)
     availability_pct = round((mtbf_h_safe / (mtbf_h_safe + mttr_h)) * 100, 1) if (mtbf_h_safe + mttr_h) > 0 else 0.0
 
+    planned_count   = sum(1 for d in all_docs if d.get("is_planned", False))
+    unplanned_count = total_breakdowns - planned_count
+
     return {
         "overview": {
             "total_breakdowns": total_breakdowns,
@@ -2776,6 +2804,8 @@ async def get_maintenance_analytics(
             "mechanical_count": len(mech_docs),
             "most_failed_machine": most_failed,
             "pm_count": pm_total,
+            "planned_count": planned_count,
+            "unplanned_count": unplanned_count,
         },
         "monthly_trend": trend,
         "by_machine": by_machine,

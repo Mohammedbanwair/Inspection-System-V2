@@ -238,6 +238,13 @@ export default function Breakdown() {
     } catch (e) { toast.error(formatApiError(e)); }
   };
 
+  const togglePlanned = async (id, current) => {
+    try {
+      await api.patch(`/breakdowns/${id}/planned`, { is_planned: !current });
+      setList((prev) => prev.map((b) => b.id === id ? { ...b, is_planned: !current } : b));
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
   const exportExcel = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -443,17 +450,18 @@ export default function Breakdown() {
               <th className="text-start px-4 py-3 font-semibold">{t("start_time")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("end_time")}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("downtime_duration")}</th>
+              <th className="text-start px-4 py-3 font-semibold">{ar ? "الحالة" : "Status"}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("actions")}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan="8" className="text-center text-slate-400 py-8">
+              <tr><td colSpan="9" className="text-center text-slate-400 py-8">
                 <div className="inline-block w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
               </td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan="8" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
+              <tr><td colSpan="9" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
             )}
             {paginated.map((b, i) => (
               <tr key={b.id} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
@@ -463,10 +471,20 @@ export default function Breakdown() {
                     hour: "numeric", hour12: true,
                   })}
                 </td>
-                <td className="px-4 py-3 font-semibold">
-                  {b.machine_number}{b.machine_name ? ` — ${b.machine_name}` : ""}
+                <td className="px-4 py-3 font-semibold font-mono">
+                  {b.machine_number}
+                  {b.machine_name && <span className="font-normal text-slate-500 ms-1 text-xs">— {b.machine_name}</span>}
                 </td>
-                <td className="px-4 py-3">{b.technician_name}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1.5">
+                    {b.technician_name}
+                    {b.submitter_role === "helper" && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-purple-100 text-purple-700 rounded">
+                        {ar ? "مساعد" : "Helper"}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3 max-w-[200px]">
                   <div className="truncate" title={b.brief_description}>{b.brief_description}</div>
                   {b.repair_description && (
@@ -481,6 +499,19 @@ export default function Breakdown() {
                   <span className="px-2 py-1 text-xs font-bold bg-[#EDE0ED] text-[#6B2D6B]">
                     {calcDuration(b.start_time, b.end_time)}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  <button
+                    onClick={() => togglePlanned(b.id, b.is_planned)}
+                    title={ar ? "انقر للتغيير" : "Click to toggle"}
+                    className={`px-2.5 py-1 text-xs font-bold transition-colors cursor-pointer ${
+                      b.is_planned
+                        ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                        : "bg-red-100 text-red-700 hover:bg-red-200"
+                    }`}
+                  >
+                    {b.is_planned ? (ar ? "مخطط" : "Planned") : (ar ? "غير مخطط" : "Unplanned")}
+                  </button>
                 </td>
                 <td className="px-4 py-3">
                   <button
