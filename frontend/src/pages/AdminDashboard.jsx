@@ -71,13 +71,13 @@ function SidebarItem({ item, active, setActive, badge, onClose }) {
     <button
       onClick={() => { setActive(item.key); onClose?.(); }}
       data-testid={`admin-tab-${item.key}`}
-      className={`w-full flex items-center gap-3 px-4 py-2.5 text-[14px] font-semibold transition-all rounded-sm ${
+      className={`w-full flex items-center gap-3 px-4 py-2.5 text-[15px] font-semibold transition-all rounded-sm ${
         isActive
           ? "bg-slate-900 text-white dark:bg-slate-700"
           : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
       }`}
     >
-      <Icon size={17} weight={isActive ? "bold" : "regular"} className="shrink-0" />
+      <Icon size={18} weight={isActive ? "bold" : "regular"} className="shrink-0" />
       <span className="flex-1 text-start leading-tight">{t(item.label_key)}</span>
       {badge > 0 && (
         <span className="h-5 min-w-[20px] px-1 bg-red-500 text-white text-xs font-bold flex items-center justify-center rounded-full">
@@ -96,7 +96,7 @@ function SidebarGroup({ entry, active, setActive, openGroups, toggleGroup, pendi
     <div className="mt-2">
       <button
         onClick={() => toggleGroup(entry.group)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
       >
         <Caret size={10} weight="bold" />
         {t(entry.group)}
