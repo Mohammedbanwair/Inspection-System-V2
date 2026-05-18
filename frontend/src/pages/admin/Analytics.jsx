@@ -203,7 +203,7 @@ export default function Analytics() {
       {!loading && data && (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <KpiCard label={t("kpi_total_breakdowns")} value={ov.total_breakdowns ?? 0} accent={PURPLE} />
             <KpiCard label={ar ? "غير مخططة" : "Unplanned"}
                      value={ov.unplanned_count ?? (ov.total_breakdowns ?? 0)}
@@ -213,7 +213,6 @@ export default function Analytics() {
                      value={ov.planned_count ?? 0}
                      accent="#10B981"
                      sub={ar ? "صيانة دورية" : "preventive maintenance"} />
-            <KpiCard label={t("kpi_pm_count")} value={ov.pm_count ?? 0} accent={PM_CLR} />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
             <KpiCard label={t("kpi_downtime_hours")}   value={`${ov.total_downtime_hours ?? 0}h`} />
