@@ -85,28 +85,10 @@ export default function Overview() {
 
             {/* Mini stats row */}
             <div>
-              <div className="grid grid-cols-4 gap-3 mb-5 bg-slate-50 border border-slate-100 p-4">
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 border border-slate-100 p-4">
                 <MiniStat label={t("monthly_breakdowns_count")} value={monthly?.total ?? 0} />
-                <MiniStat label={t("monthly_resolved")}         value={monthly?.resolved ?? 0} color="text-emerald-600" />
-                <MiniStat label={t("monthly_open")}             value={monthly?.open ?? 0}     color={monthly?.open > 0 ? "text-red-500" : "text-slate-900"} />
                 <MiniStat label={t("monthly_downtime_hours")}   value={`${monthly?.downtime_hours ?? 0}h`} color="text-amber-600" />
               </div>
-
-              {/* Resolved vs Open bar */}
-              {monthly?.total > 0 && (
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs font-semibold text-slate-500">
-                    <span>{t("monthly_resolved")}</span>
-                    <span>{Math.round((monthly.resolved / monthly.total) * 100)}%</span>
-                  </div>
-                  <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-500 rounded-full transition-all"
-                      style={{ width: `${(monthly.resolved / monthly.total) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Top causes */}
