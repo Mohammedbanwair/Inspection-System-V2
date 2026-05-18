@@ -305,7 +305,7 @@ export default function Breakdown() {
           { label: t("today_breakdowns"),       value: today, Icon: Calendar, color: "text-slate-900" },
           { label: ar ? "ساعات التوقف" : "Downtime Hours", value: `${Math.round(totalDowntimeMins / 60 * 10) / 10}h`, Icon: Gauge, color: "text-amber-600" },
         ].map(({ label, value, Icon, color }) => (
-          <div key={label} className="bg-white border border-slate-200 p-4">
+          <div key={label} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-lg">
             <div className="flex items-center gap-2 text-slate-500 mb-1">
               <Icon size={15} weight="bold" />
               <span className="text-xs font-semibold uppercase tracking-widest">{label}</span>
@@ -318,7 +318,7 @@ export default function Breakdown() {
       {list.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           {/* Bar chart — daily breakdown counts */}
-          <div className="bg-white border border-slate-200 p-4">
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-lg">
             <div className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
               {ar ? "التوقفات اليومية" : "Daily Breakdowns"}
             </div>
@@ -333,7 +333,7 @@ export default function Breakdown() {
           </div>
 
           {/* Pie chart — top causes */}
-          <div className="bg-white border border-slate-200 p-4">
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-lg">
             <div className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
               {ar ? "أبرز الأسباب" : "Top Causes"}
             </div>
@@ -358,7 +358,7 @@ export default function Breakdown() {
       )}
 
       {/* Manage Reasons collapsible */}
-      <div className="bg-white border border-slate-200 mb-4">
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 mb-4 rounded-lg">
         <button
           onClick={() => setShowReasons((v) => !v)}
           className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors"
@@ -379,7 +379,7 @@ export default function Breakdown() {
       </div>
 
       {/* Filters */}
-      <form onSubmit={apply} className="bg-white border border-slate-200 p-4 sm:p-5 mb-4">
+      <form onSubmit={apply} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 sm:p-5 mb-4 rounded-lg">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           <select
             value={machineId}
@@ -432,7 +432,7 @@ export default function Breakdown() {
         </button>
       </div>
 
-      <div className="bg-white border border-slate-200 overflow-x-auto">
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-x-auto rounded-lg">
         <table className="w-full text-sm min-w-[600px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>

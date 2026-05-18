@@ -188,7 +188,7 @@ export default function AdminDashboard() {
       <TopBar />
 
       {/* Mobile section bar */}
-      <div className="md:hidden sticky top-14 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between">
+      <div className="md:hidden sticky top-14 sm:top-16 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between">
         <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{activeLabel}</span>
         <button
           onClick={() => setSidebarOpen(true)}

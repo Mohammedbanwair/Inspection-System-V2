@@ -137,7 +137,7 @@ export default function Machines() {
 
       {showForm && (
         <form onSubmit={save}
-              className="bg-white border border-slate-200 p-5 mb-4 space-y-3 fade-in"
+              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-5 mb-4 space-y-3 fade-in rounded-lg"
               data-testid="machine-form">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <input required placeholder={t("number")} value={number}
@@ -182,8 +182,8 @@ export default function Machines() {
         </form>
       )}
 
-      <div className="bg-white border border-slate-200 overflow-x-auto">
-        <div className="px-4 py-2 text-xs text-slate-400 flex items-center gap-1 border-b border-slate-100">
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-x-auto rounded-lg">
+        <div className="px-4 py-2 text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 border-b border-slate-100 dark:border-slate-700">
           <DotsSixVertical size={14} /> {t("drag_to_reorder")}
         </div>
         <table className="w-full text-sm min-w-[640px]">
