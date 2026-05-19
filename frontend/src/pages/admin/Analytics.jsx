@@ -242,7 +242,7 @@ export default function Analytics() {
                         stroke={PURPLE}   strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                   <Line type="monotone" dataKey="downtime_hours" name={t("chart_downtime")}
                         stroke={ELEC_CLR} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="pm_count"       name={t("chart_pm")}
+                  <Line type="monotone" dataKey="planned_count"  name={ar ? "مخططة (PM)" : "Planned (PM)"}
                         stroke={PM_CLR}   strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} strokeDasharray="4 2" />
                 </LineChart>
               </ResponsiveContainer>

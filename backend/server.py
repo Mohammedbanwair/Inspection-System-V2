@@ -2824,7 +2824,7 @@ async def get_maintenance_analytics(
 
     trend_bdocs = await db.breakdowns.find(
         {"start_time": {"$gte": trend_start_str}},
-        {"_id": 0, "start_time": 1, "end_time": 1},
+        {"_id": 0, "start_time": 1, "end_time": 1, "is_planned": 1},
     ).to_list(10000)
     bd_by_ym: dict = defaultdict(list)
     for d in trend_bdocs:
@@ -2850,6 +2850,7 @@ async def get_maintenance_analytics(
             "count": len(month_docs),
             "downtime_hours": round(sum(_calc_duration_minutes(d.get("start_time",""), d.get("end_time","")) for d in month_docs) / 60, 1),
             "pm_count": pm_by_ym.get(ym_key, 0),
+            "planned_count": sum(1 for d in month_docs if d.get("is_planned")),
         })
 
     mttr_h = mttr_min / 60
