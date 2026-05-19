@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { api, formatApiError, downloadBlob } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import {
   Trash, Calendar, Gauge,
-  Gear, Plus, PencilSimple, X, FileXls,
+  Gear, Plus, PencilSimple, X, FileXls, UploadSimple,
 } from "@phosphor-icons/react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -183,6 +184,270 @@ function ManageReasons({ t, ar }) {
   );
 }
 
+// ── Excel Import ─────────────────────────────────────────────────────────────
+
+const PLANNED_RE = /PREVENTIVE|PM\b|PLANNED|SCHEDULED|MAINTENANCE/i;
+
+function timeSerial(val) {
+  if (!val && val !== 0) return null;
+  if (val instanceof Date) {
+    return `${String(val.getUTCHours()).padStart(2, "0")}:${String(val.getUTCMinutes()).padStart(2, "0")}`;
+  }
+  if (typeof val === "number") {
+    const mins = Math.round(val * 1440);
+    return `${String(Math.floor(mins / 60) % 24).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+  }
+  if (typeof val === "string") return val.slice(0, 5);
+  return null;
+}
+
+function dateStr(val) {
+  if (!val) return null;
+  if (val instanceof Date) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, "0");
+    const d = String(val.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  if (typeof val === "string") {
+    const match = val.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+  return null;
+}
+
+function buildDatetime(dStr, tStr, nextDay = false) {
+  if (!dStr || !tStr) return null;
+  const [y, mo, dy] = dStr.split("-").map(Number);
+  const [h, mi] = tStr.split(":").map(Number);
+  const dt = new Date(y, mo - 1, dy + (nextDay ? 1 : 0), h, mi);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
+function parseExcelRows(ab, machineMap) {
+  const wb = XLSX.read(ab, { type: "array", cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+
+  const records = [];
+  const skipped = [];
+
+  for (let i = 3; i < raw.length; i++) {
+    const row = raw[i];
+    const date  = row[7];
+    const mNum  = row[9];
+    const tFrom = row[11];
+    const tTo   = row[12];
+    const reason = row[14];
+
+    if (!date || !mNum || !reason) continue;
+
+    const dStr = dateStr(date);
+    const fromStr = timeSerial(tFrom);
+    const toStr   = timeSerial(tTo);
+    if (!dStr || !fromStr || !toStr) { skipped.push(i + 1); continue; }
+
+    const machId = machineMap[parseInt(mNum)];
+    if (!machId) { skipped.push(i + 1); continue; }
+
+    const crossMidnight = toStr < fromStr || toStr === "00:00";
+    const start = buildDatetime(dStr, fromStr);
+    const end   = buildDatetime(dStr, toStr, crossMidnight);
+    if (!start || !end) { skipped.push(i + 1); continue; }
+
+    records.push({
+      machine_id:        machId,
+      machine_num:       parseInt(mNum),
+      brief_description: String(reason).trim(),
+      repair_description: "",
+      start_time:        start,
+      end_time:          end,
+      is_planned:        PLANNED_RE.test(String(reason)),
+    });
+  }
+  return { records, skipped };
+}
+
+function ExcelImportModal({ machines, ar, onClose, onDone }) {
+  const fileRef = useRef(null);
+  const [rows, setRows]       = useState(null);
+  const [skipped, setSkipped] = useState([]);
+  const [progress, setProgress] = useState(null); // { done, total, errors }
+  const [finished, setFinished] = useState(false);
+
+  const machineMap = {};
+  machines.forEach((m) => {
+    const n = parseInt(m.number);
+    if (!isNaN(n)) machineMap[n] = m.id;
+  });
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const ab = await file.arrayBuffer();
+    const { records, skipped: sk } = parseExcelRows(ab, machineMap);
+    setRows(records);
+    setSkipped(sk);
+  };
+
+  const upload = async () => {
+    if (!rows?.length) return;
+    setProgress({ done: 0, total: rows.length, errors: 0 });
+    let errors = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const { machine_num, ...payload } = rows[i]; // eslint-disable-line no-unused-vars
+      try {
+        await api.post("/breakdowns", payload);
+      } catch {
+        errors++;
+      }
+      setProgress({ done: i + 1, total: rows.length, errors });
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    setFinished(true);
+    onDone();
+  };
+
+  const pct = progress ? Math.round((progress.done / progress.total) * 100) : 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-lg shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <span className="font-bold text-slate-800">
+            {ar ? "استيراد توقفات من Excel" : "Import Breakdowns from Excel"}
+          </span>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* File picker */}
+          {!rows && !progress && (
+            <>
+              <p className="text-sm text-slate-500">
+                {ar
+                  ? "اختر ملف Excel بنفس تنسيق الجدول (date / machine number / from / to / reason)"
+                  : "Select an Excel file with columns: date, machine number, from, to, reason"}
+              </p>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="w-full h-12 border-2 border-dashed border-slate-300 text-slate-600 hover:border-[#6B2D6B] hover:text-[#6B2D6B] font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
+              >
+                <UploadSimple size={18} weight="bold" />
+                {ar ? "اختر ملف Excel" : "Choose Excel file"}
+              </button>
+            </>
+          )}
+
+          {/* Preview */}
+          {rows && !progress && (
+            <>
+              <div className="text-sm space-y-1">
+                <p className="font-semibold text-slate-800">
+                  {ar ? `تم قراءة ${rows.length} سجل` : `${rows.length} records parsed`}
+                  {skipped.length > 0 && (
+                    <span className="text-amber-600 ms-2 font-normal text-xs">
+                      ({ar ? `${skipped.length} سطر تم تخطيه` : `${skipped.length} rows skipped`})
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {/* Mini preview table */}
+              <div className="overflow-x-auto border border-slate-100 rounded">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-start">{ar ? "مكينة" : "Machine"}</th>
+                      <th className="px-3 py-2 text-start">{ar ? "السبب" : "Reason"}</th>
+                      <th className="px-3 py-2 text-start">{ar ? "البداية" : "Start"}</th>
+                      <th className="px-3 py-2 text-start">{ar ? "الحالة" : "Status"}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.slice(0, 5).map((r, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        <td className="px-3 py-1.5 font-mono font-bold">{r.machine_num}</td>
+                        <td className="px-3 py-1.5 max-w-[160px] truncate">{r.brief_description}</td>
+                        <td className="px-3 py-1.5 font-mono">{r.start_time?.slice(5, 16)}</td>
+                        <td className="px-3 py-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.is_planned ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                            {r.is_planned ? (ar ? "مخطط" : "Planned") : (ar ? "غير مخطط" : "Unplanned")}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {rows.length > 5 && (
+                      <tr className="border-t border-slate-100">
+                        <td colSpan={4} className="px-3 py-1.5 text-slate-400 text-center">
+                          {ar ? `و ${rows.length - 5} سجلات أخرى...` : `and ${rows.length - 5} more...`}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setRows(null); setSkipped([]); }}
+                  className="flex-1 h-11 border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold text-sm"
+                >
+                  {ar ? "تغيير الملف" : "Change file"}
+                </button>
+                <button
+                  onClick={upload}
+                  className="flex-1 h-11 bg-[#6B2D6B] text-white font-bold text-sm hover:bg-[#5a2559] flex items-center justify-center gap-2"
+                >
+                  <UploadSimple size={16} weight="bold" />
+                  {ar ? "ابدأ الرفع" : "Start Upload"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Progress */}
+          {progress && (
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm font-semibold text-slate-700">
+                <span>{ar ? "جاري الرفع..." : "Uploading..."}</span>
+                <span>{progress.done} / {progress.total}</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                <div
+                  className="h-3 bg-[#6B2D6B] rounded-full transition-all duration-200"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-400 text-center">{pct}%</p>
+              {progress.errors > 0 && (
+                <p className="text-xs text-red-500 text-center">
+                  {ar ? `${progress.errors} أخطاء` : `${progress.errors} errors`}
+                </p>
+              )}
+              {finished && (
+                <div className="text-center space-y-2">
+                  <p className="font-bold text-emerald-600 text-base">
+                    {ar ? `✓ تم رفع ${progress.done - progress.errors} سجل بنجاح` : `✓ ${progress.done - progress.errors} records uploaded`}
+                  </p>
+                  <button onClick={onClose} className="h-10 px-6 bg-slate-900 text-white font-semibold text-sm hover:bg-slate-700">
+                    {ar ? "إغلاق" : "Close"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const PAGE_SIZES = [25, 50, 100];
 
 export default function Breakdown() {
@@ -196,6 +461,7 @@ export default function Breakdown() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showReasons, setShowReasons] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -305,6 +571,14 @@ export default function Breakdown() {
 
   return (
     <div data-testid="breakdown-panel">
+      {showImport && (
+        <ExcelImportModal
+          machines={machines}
+          ar={ar}
+          onClose={() => setShowImport(false)}
+          onDone={() => { setShowImport(false); load(); toast.success(ar ? "تم الاستيراد ✓" : "Import complete ✓"); }}
+        />
+      )}
       {/* Stats + Charts */}
       <div className="grid grid-cols-3 gap-3 mb-4">
         {[
@@ -430,13 +704,22 @@ export default function Breakdown() {
             {filtered.length} {ar ? "نتيجة" : "results"}
           </span>
         </div>
-        <button
-          onClick={exportExcel}
-          className="h-10 px-4 bg-[#1D6F42] text-white font-semibold flex items-center gap-2 hover:bg-[#155734] text-sm shrink-0"
-        >
-          <FileXls size={16} weight="bold" />
-          {t("export_excel_downtime")}
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={() => setShowImport(true)}
+            className="h-10 px-4 bg-[#6B2D6B] text-white font-semibold flex items-center gap-2 hover:bg-[#5a2559] text-sm"
+          >
+            <UploadSimple size={16} weight="bold" />
+            {ar ? "استيراد Excel" : "Import Excel"}
+          </button>
+          <button
+            onClick={exportExcel}
+            className="h-10 px-4 bg-[#1D6F42] text-white font-semibold flex items-center gap-2 hover:bg-[#155734] text-sm"
+          >
+            <FileXls size={16} weight="bold" />
+            {t("export_excel_downtime")}
+          </button>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-x-auto rounded-lg">
