@@ -310,7 +310,7 @@ function parseExcelRows(ab, machineMap) {
     if (!fromStr) { addSkip(`from-time not parsed (${String(tFrom).slice(0,20)})`); skipped.push(i + 1); continue; }
     if (!toStr)   { addSkip(`to-time not parsed (${String(tTo).slice(0,20)})`); skipped.push(i + 1); continue; }
 
-    const machId = machineMap[parseInt(mNum)];
+    const machId = machineMap[parseInt(String(mNum).replace(/[^0-9]/g, ""))];
     if (!machId) { addSkip(`machine ${mNum} not in system`); skipped.push(i + 1); continue; }
 
     const crossMidnight = toStr < fromStr || toStr === "00:00";
@@ -320,7 +320,7 @@ function parseExcelRows(ab, machineMap) {
 
     records.push({
       machine_id:         machId,
-      machine_num:        parseInt(mNum),
+      machine_num:        parseInt(String(mNum).replace(/[^0-9]/g, "")),
       brief_description:  String(reason).trim(),
       repair_description: "",
       start_time:         start,
@@ -339,9 +339,11 @@ function ExcelImportModal({ machines, ar, onClose, onDone }) {
   const [progress, setProgress] = useState(null);
   const [finished, setFinished] = useState(false);
 
+  // Build map: numeric part of machine number → id
+  // Handles formats: "MC5", "MC-5", "MC 5", "5"
   const machineMap = {};
   machines.forEach((m) => {
-    const n = parseInt(m.number);
+    const n = parseInt(String(m.number).replace(/[^0-9]/g, ""));
     if (!isNaN(n)) machineMap[n] = m.id;
   });
 
