@@ -586,6 +586,7 @@ export default function Breakdown() {
 
   const [list, setList] = useState([]);
   const [machines, setMachines] = useState([]);
+  const [reasons, setReasons] = useState([]);
   const [loading, setLoading] = useState(false);
   const [machineId, setMachineId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -595,9 +596,12 @@ export default function Breakdown() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [editReasonId, setEditReasonId] = useState(null);
+  const [editReasonText, setEditReasonText] = useState("");
 
   useEffect(() => {
     api.get("/machines").then(({ data }) => setMachines(data)).catch(() => {});
+    api.get("/downtime-reasons").then(({ data }) => setReasons(data)).catch(() => {});
   }, []);
 
   const load = async () => {
@@ -638,6 +642,17 @@ export default function Breakdown() {
     try {
       await api.patch(`/breakdowns/${id}/planned`, { is_planned: !current });
       setList((prev) => prev.map((b) => b.id === id ? { ...b, is_planned: !current } : b));
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const saveReason = async (id) => {
+    const text = editReasonText.trim();
+    if (!text) return;
+    try {
+      await api.patch(`/breakdowns/${id}/description`, { brief_description: text });
+      setList((prev) => prev.map((b) => b.id === id ? { ...b, brief_description: text } : b));
+      setEditReasonId(null);
+      toast.success(ar ? "✓ تم تحديث السبب" : "✓ Reason updated");
     } catch (e) { toast.error(formatApiError(e)); }
   };
 
@@ -898,11 +913,52 @@ export default function Breakdown() {
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3 max-w-[200px]">
-                  <div className="truncate" title={b.brief_description}>{b.brief_description}</div>
-                  {b.repair_description && (
-                    <div className="text-xs text-slate-400 truncate mt-0.5" title={b.repair_description}>
-                      {b.repair_description}
+                <td className="px-4 py-3 max-w-[220px]">
+                  {editReasonId === b.id ? (
+                    <div className="flex items-center gap-1 min-w-[200px]">
+                      <select
+                        value={editReasonText}
+                        onChange={(e) => setEditReasonText(e.target.value)}
+                        className="flex-1 h-8 px-2 border border-[#6B2D6B] text-xs bg-white focus:outline-none"
+                        autoFocus
+                      >
+                        {reasons.map((r) => (
+                          <option key={r.id} value={r.text}>{r.text}</option>
+                        ))}
+                        {!reasons.some((r) => r.text === editReasonText) && editReasonText && (
+                          <option value={editReasonText}>{editReasonText}</option>
+                        )}
+                      </select>
+                      <button
+                        onClick={() => saveReason(b.id)}
+                        className="h-8 px-2 bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700 shrink-0"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        onClick={() => setEditReasonId(null)}
+                        className="h-8 w-8 border border-slate-200 hover:bg-slate-100 flex items-center justify-center shrink-0"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-1 group">
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate" title={b.brief_description}>{b.brief_description}</div>
+                        {b.repair_description && (
+                          <div className="text-xs text-slate-400 truncate mt-0.5" title={b.repair_description}>
+                            {b.repair_description}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => { setEditReasonId(b.id); setEditReasonText(b.brief_description || ""); }}
+                        className="h-6 w-6 border border-slate-200 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title={ar ? "تعديل السبب" : "Edit reason"}
+                      >
+                        <PencilSimple size={11} />
+                      </button>
                     </div>
                   )}
                 </td>

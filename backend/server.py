@@ -297,6 +297,10 @@ class BreakdownPlannedUpdate(BaseModel):
     is_planned: bool
 
 
+class BreakdownDescriptionUpdate(BaseModel):
+    brief_description: str
+
+
 class DowntimeReasonCreate(BaseModel):
     text: str
     specialty: Optional[Literal["electrical", "mechanical"]] = None
@@ -2138,6 +2142,17 @@ async def cleanup_breakdown_reasons(_=Depends(require_admin)):
 @api.patch("/breakdowns/{bid}/planned")
 async def update_breakdown_planned(bid: str, body: BreakdownPlannedUpdate, _=Depends(require_admin)):
     res = await db.breakdowns.update_one({"id": bid}, {"$set": {"is_planned": body.is_planned}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "غير موجود")
+    return {"ok": True}
+
+
+@api.patch("/breakdowns/{bid}/description")
+async def update_breakdown_description(bid: str, body: BreakdownDescriptionUpdate, _=Depends(require_admin)):
+    text = body.brief_description.strip()
+    if not text:
+        raise HTTPException(400, "الوصف لا يمكن أن يكون فارغاً")
+    res = await db.breakdowns.update_one({"id": bid}, {"$set": {"brief_description": text}})
     if res.matched_count == 0:
         raise HTTPException(404, "غير موجود")
     return {"ok": True}
