@@ -245,7 +245,11 @@ function parseExcelRows(ab, machineMap) {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const raw = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
 
-  // Find header row (first row that contains recognizable column names)
+  // debug: first 5 non-empty rows
+  const debugRows = raw.filter((r) => r && r.some((c) => c != null)).slice(0, 5)
+    .map((r) => r.map((c) => (c == null ? "" : c instanceof Date ? c.toLocaleDateString() : String(c).slice(0, 20))));
+
+  // Find header row
   let headerIdx = -1;
   let colDate = -1, colMnum = -1, colFrom = -1, colTo = -1, colReason = -1;
 
@@ -266,9 +270,9 @@ function parseExcelRows(ab, machineMap) {
     }
   }
 
-  // Fallback to fixed indices if header not found (original file layout)
+  // Fallback to fixed indices
   if (headerIdx === -1) {
-    headerIdx = 2; // row 3 (0-indexed) is the header in the original file
+    headerIdx = 2;
     colDate   = 7;
     colMnum   = 9;
     colFrom   = 11;
@@ -314,14 +318,15 @@ function parseExcelRows(ab, machineMap) {
       is_planned:         PLANNED_RE.test(String(reason)),
     });
   }
-  return { records, skipped };
+  return { records, skipped, debugRows, colDate, colMnum, colFrom, colTo, colReason, headerIdx };
 }
 
 function ExcelImportModal({ machines, ar, onClose, onDone }) {
   const fileRef = useRef(null);
-  const [rows, setRows]       = useState(null);
-  const [skipped, setSkipped] = useState([]);
-  const [progress, setProgress] = useState(null); // { done, total, errors }
+  const [rows, setRows]         = useState(null);
+  const [skipped, setSkipped]   = useState([]);
+  const [debugInfo, setDebugInfo] = useState(null);
+  const [progress, setProgress] = useState(null);
   const [finished, setFinished] = useState(false);
 
   const machineMap = {};
@@ -334,9 +339,10 @@ function ExcelImportModal({ machines, ar, onClose, onDone }) {
     const file = e.target.files[0];
     if (!file) return;
     const ab = await file.arrayBuffer();
-    const { records, skipped: sk } = parseExcelRows(ab, machineMap);
+    const { records, skipped: sk, debugRows, colDate, colMnum, colFrom, colTo, colReason, headerIdx } = parseExcelRows(ab, machineMap);
     setRows(records);
     setSkipped(sk);
+    setDebugInfo({ debugRows, colDate, colMnum, colFrom, colTo, colReason, headerIdx });
   };
 
   const upload = async () => {
@@ -397,10 +403,33 @@ function ExcelImportModal({ machines, ar, onClose, onDone }) {
             <>
               <div className="text-sm space-y-1">
                 {rows.length === 0 ? (
-                  <div className="bg-red-50 border border-red-200 rounded p-3 text-red-700 text-xs space-y-1">
-                    <p className="font-bold">{ar ? "لم يتم قراءة أي سجل" : "No records found"}</p>
-                    <p>{ar ? "تأكد أن الملف يحتوي على أعمدة: date, machine number, from, to, reason" : "Make sure the file has columns: date, machine number, from, to, reason"}</p>
-                    <p className="text-slate-500">{ar ? `سطور تم تخطيها: ${skipped.length}` : `Skipped rows: ${skipped.length}`}</p>
+                  <div className="space-y-2">
+                    <div className="bg-red-50 border border-red-200 rounded p-3 text-red-700 text-xs space-y-1">
+                      <p className="font-bold">{ar ? "لم يتم قراءة أي سجل" : "No records found"}</p>
+                      <p>{ar
+                        ? `تم اكتشاف السطر الرأسي في: صف ${(debugInfo?.headerIdx ?? -1) + 1} — أعمدة مكتشفة: date=${debugInfo?.colDate} machine=${debugInfo?.colMnum} from=${debugInfo?.colFrom} to=${debugInfo?.colTo} reason=${debugInfo?.colReason}`
+                        : `Header at row ${(debugInfo?.headerIdx ?? -1) + 1} — cols: date=${debugInfo?.colDate} machine=${debugInfo?.colMnum} from=${debugInfo?.colFrom} to=${debugInfo?.colTo} reason=${debugInfo?.colReason}`}
+                      </p>
+                    </div>
+                    {debugInfo?.debugRows?.length > 0 && (
+                      <div className="border border-slate-200 rounded overflow-x-auto">
+                        <p className="text-xs text-slate-500 px-2 pt-1">{ar ? "أول صفوف الملف:" : "First rows from file:"}</p>
+                        <table className="text-[10px] w-full">
+                          <tbody>
+                            {debugInfo.debugRows.map((row, ri) => (
+                              <tr key={ri} className={ri % 2 ? "bg-slate-50" : ""}>
+                                <td className="px-1 py-0.5 text-slate-400 font-mono">{ri + 1}</td>
+                                {row.map((cell, ci) => (
+                                  <td key={ci} className={`px-1 py-0.5 font-mono border-s border-slate-100 ${cell ? "text-slate-700" : "text-slate-300"}`}>
+                                    {cell || "·"}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="font-semibold text-slate-800">
@@ -451,7 +480,7 @@ function ExcelImportModal({ machines, ar, onClose, onDone }) {
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setRows(null); setSkipped([]); }}
+                  onClick={() => { setRows(null); setSkipped([]); setDebugInfo(null); }}
                   className="flex-1 h-11 border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold text-sm"
                 >
                   {ar ? "تغيير الملف" : "Change file"}
