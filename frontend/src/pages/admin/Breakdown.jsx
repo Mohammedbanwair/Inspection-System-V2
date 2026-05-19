@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import {
   Trash, Calendar, Gauge,
-  Plus, PencilSimple, X, FileXls, UploadSimple,
+  Gear, Plus, PencilSimple, X, FileXls, UploadSimple, ArrowsClockwise,
 } from "@phosphor-icons/react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -83,6 +83,15 @@ function ManageReasons({ t, ar }) {
 
   useEffect(() => { load(); }, []);
 
+  const syncAndCleanup = async () => {
+    try {
+      await api.post("/breakdowns/cleanup-reasons");
+      const { data } = await api.post("/breakdowns/sync-reasons");
+      toast.success(ar ? `✓ تمت المزامنة — أُضيف ${data.added} سبب جديد` : `✓ Synced — ${data.added} new reasons added`);
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
   const add = async (e) => {
     e.preventDefault();
     if (!newText.trim()) return;
@@ -127,6 +136,13 @@ function ManageReasons({ t, ar }) {
 
   return (
     <div className="space-y-2">
+      <div className="flex justify-end mb-1">
+        <button onClick={syncAndCleanup}
+                className="h-8 px-3 bg-amber-600 text-white text-xs font-semibold flex items-center gap-1.5 hover:bg-amber-700">
+          <ArrowsClockwise size={13} weight="bold" />
+          {ar ? "مزامنة وتنظيف الأسباب" : "Sync & Clean Reasons"}
+        </button>
+      </div>
       <ul className="space-y-1">
         {reasons.map((r) => (
           <li key={r.id} className="flex items-center gap-2 border border-slate-100 px-3 py-2 bg-slate-50">
@@ -574,6 +590,7 @@ export default function Breakdown() {
   const [machineId, setMachineId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [showReasons, setShowReasons] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -750,6 +767,27 @@ export default function Breakdown() {
           </div>
         </div>
       )}
+
+      {/* Manage Reasons collapsible */}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 mb-4 rounded-lg">
+        <button
+          onClick={() => setShowReasons((v) => !v)}
+          className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center gap-2 font-semibold text-sm text-slate-700">
+            <Gear size={16} weight="bold" />
+            {t("manage_reasons")}
+          </div>
+          <span className="text-xs text-slate-400">{showReasons ? "▲" : "▼"}</span>
+        </button>
+        {showReasons && (
+          <div className="px-5 pb-5 border-t border-slate-100">
+            <div className="pt-4">
+              <ManageReasons t={t} ar={ar} />
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Filters */}
       <form onSubmit={apply} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 sm:p-5 mb-4 rounded-lg">
