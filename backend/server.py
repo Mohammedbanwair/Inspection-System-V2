@@ -3318,8 +3318,9 @@ async def startup():
     await db.inspections.create_index("target_number")
     await db.breakdowns.create_index("id", unique=True)
     await db.breakdowns.create_index("created_at")
+    await db.breakdowns.create_index("start_time")
     await db.breakdowns.create_index("machine_id")
-    await db.breakdowns.create_index([("created_at", 1), ("machine_id", 1)])
+    await db.breakdowns.create_index([("start_time", 1), ("machine_id", 1)])
     await db.mdb_readings.create_index("created_at")
     for c in ("machines", "chillers", "panels", "cooling_towers"):
         await db[c].create_index("sort_order")
@@ -3355,6 +3356,34 @@ async def startup():
         migrated += 1
     if migrated:
         logger.info(f"Migrated {migrated} inspections to short answer field names")
+
+    # Migration: normalise breakdown brief_description (fix typos / merge duplicates)
+    _REASON_MAP = {
+        "ROPOT MALFUNCTION":                   "ROBOT MALFUNCTION",
+        "CHELLER B-DOWN":                      "CHILLER B-DOWN",
+        "COMPROSSER B-DOWN":                   "COMPRESSOR B-DOWN",
+        "ELECTRIC POWER FAIL URE":             "ELECTRICAL POWER FAILURE",
+        "ELECTRIC POWER FAIL URE ":            "ELECTRICAL POWER FAILURE",
+        "ELECTRICL POWER FAILURE":             "ELECTRICAL POWER FAILURE",
+        "HOT RUINNIER CONTROL BOX B-DOWN":     "HOT RUNNER CONTROL BOX B-DOWN",
+        "MACHINE UNDER MAINTENACE":            "PREVENTIVE MAINTENANCE",
+        "NOZZEL HEATER MALFUNCTION":           "NOZZLE HEATER MALFUNCTION",
+        "OIL LEKAGE":                          "OIL LEAKAGE",
+        "M/C C.TOWER PIPE BROKEN":             "COOLING TOWER PIPE BROKEN",
+        "C.TOWER NO WATER":                    "COOLING TOWER NO WATER",
+        "COOLING TOWER B-DOWN ":               "COOLING TOWER B-DOWN",
+        "AIR SUPPLY LOW":                      "NO AIR SUPPLY",
+    }
+    reason_fixed = 0
+    for old, new in _REASON_MAP.items():
+        res = await db.breakdowns.update_many(
+            {"brief_description": old},
+            {"$set": {"brief_description": new,
+                      "is_planned": bool(re.search(r'PREVENTIVE|PM\b|PLANNED|SCHEDULED|وقائية|مجدولة', new, re.IGNORECASE))}}
+        )
+        reason_fixed += res.modified_count
+    if reason_fixed:
+        logger.info(f"Normalised {reason_fixed} breakdown reason(s)")
 
     # Seed chiller questions if none exist
     if await db.questions.count_documents({"category": "chiller"}) == 0:
