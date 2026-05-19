@@ -282,6 +282,12 @@ function parseExcelRows(ab, machineMap) {
 
   const records = [];
   const skipped = [];
+  const skipReasons = {}; // reason → count
+
+  const addSkip = (reason) => { skipReasons[reason] = (skipReasons[reason] || 0) + 1; };
+
+  // sample of first data row for debugging
+  let firstDataRow = null;
 
   for (let i = headerIdx + 1; i < raw.length; i++) {
     const row = raw[i];
@@ -293,20 +299,24 @@ function parseExcelRows(ab, machineMap) {
     const tTo    = colTo     >= 0 ? row[colTo]     : null;
     const reason = colReason >= 0 ? row[colReason] : null;
 
-    if (!date || !mNum || !reason) continue;
+    if (!date || !mNum || !reason) { addSkip("empty date/machine/reason"); continue; }
+
+    if (!firstDataRow) firstDataRow = { date, mNum, tFrom, tTo, reason };
 
     const dStr    = dateStr(date);
     const fromStr = timeSerial(tFrom);
     const toStr   = timeSerial(tTo);
-    if (!dStr || !fromStr || !toStr) { skipped.push(i + 1); continue; }
+    if (!dStr)    { addSkip(`date not parsed (${String(date).slice(0,20)})`); skipped.push(i + 1); continue; }
+    if (!fromStr) { addSkip(`from-time not parsed (${String(tFrom).slice(0,20)})`); skipped.push(i + 1); continue; }
+    if (!toStr)   { addSkip(`to-time not parsed (${String(tTo).slice(0,20)})`); skipped.push(i + 1); continue; }
 
     const machId = machineMap[parseInt(mNum)];
-    if (!machId) { skipped.push(i + 1); continue; }
+    if (!machId) { addSkip(`machine ${mNum} not in system`); skipped.push(i + 1); continue; }
 
     const crossMidnight = toStr < fromStr || toStr === "00:00";
     const start = buildDatetime(dStr, fromStr);
     const end   = buildDatetime(dStr, toStr, crossMidnight);
-    if (!start || !end) { skipped.push(i + 1); continue; }
+    if (!start || !end) { addSkip("datetime build failed"); skipped.push(i + 1); continue; }
 
     records.push({
       machine_id:         machId,
@@ -318,7 +328,7 @@ function parseExcelRows(ab, machineMap) {
       is_planned:         PLANNED_RE.test(String(reason)),
     });
   }
-  return { records, skipped, debugRows, colDate, colMnum, colFrom, colTo, colReason, headerIdx };
+  return { records, skipped, skipReasons, firstDataRow, debugRows, colDate, colMnum, colFrom, colTo, colReason, headerIdx };
 }
 
 function ExcelImportModal({ machines, ar, onClose, onDone }) {
@@ -339,10 +349,10 @@ function ExcelImportModal({ machines, ar, onClose, onDone }) {
     const file = e.target.files[0];
     if (!file) return;
     const ab = await file.arrayBuffer();
-    const { records, skipped: sk, debugRows, colDate, colMnum, colFrom, colTo, colReason, headerIdx } = parseExcelRows(ab, machineMap);
+    const { records, skipped: sk, skipReasons, firstDataRow, debugRows, colDate, colMnum, colFrom, colTo, colReason, headerIdx } = parseExcelRows(ab, machineMap);
     setRows(records);
     setSkipped(sk);
-    setDebugInfo({ debugRows, colDate, colMnum, colFrom, colTo, colReason, headerIdx });
+    setDebugInfo({ debugRows, skipReasons, firstDataRow, colDate, colMnum, colFrom, colTo, colReason, headerIdx });
   };
 
   const upload = async () => {
@@ -407,9 +417,26 @@ function ExcelImportModal({ machines, ar, onClose, onDone }) {
                     <div className="bg-red-50 border border-red-200 rounded p-3 text-red-700 text-xs space-y-1">
                       <p className="font-bold">{ar ? "لم يتم قراءة أي سجل" : "No records found"}</p>
                       <p>{ar
-                        ? `تم اكتشاف السطر الرأسي في: صف ${(debugInfo?.headerIdx ?? -1) + 1} — أعمدة مكتشفة: date=${debugInfo?.colDate} machine=${debugInfo?.colMnum} from=${debugInfo?.colFrom} to=${debugInfo?.colTo} reason=${debugInfo?.colReason}`
-                        : `Header at row ${(debugInfo?.headerIdx ?? -1) + 1} — cols: date=${debugInfo?.colDate} machine=${debugInfo?.colMnum} from=${debugInfo?.colFrom} to=${debugInfo?.colTo} reason=${debugInfo?.colReason}`}
+                        ? `أعمدة مكتشفة: date=${debugInfo?.colDate} machine=${debugInfo?.colMnum} from=${debugInfo?.colFrom} to=${debugInfo?.colTo} reason=${debugInfo?.colReason}`
+                        : `Cols: date=${debugInfo?.colDate} machine=${debugInfo?.colMnum} from=${debugInfo?.colFrom} to=${debugInfo?.colTo} reason=${debugInfo?.colReason}`}
                       </p>
+                    {debugInfo?.firstDataRow && (
+                      <p className="font-mono bg-white border border-red-100 rounded p-1 mt-1">
+                        {ar ? "أول صف بيانات: " : "First data row: "}
+                        date="{String(debugInfo.firstDataRow.date).slice(0,15)}" &nbsp;
+                        machine="{String(debugInfo.firstDataRow.mNum)}" &nbsp;
+                        from="{String(debugInfo.firstDataRow.tFrom).slice(0,10)}" &nbsp;
+                        to="{String(debugInfo.firstDataRow.tTo).slice(0,10)}"
+                      </p>
+                    )}
+                    {debugInfo?.skipReasons && Object.keys(debugInfo.skipReasons).length > 0 && (
+                      <div className="mt-1 space-y-0.5">
+                        <p className="font-semibold">{ar ? "أسباب التخطي:" : "Skip reasons:"}</p>
+                        {Object.entries(debugInfo.skipReasons).map(([r, c]) => (
+                          <p key={r} className="font-mono">• {r}: {c}x</p>
+                        ))}
+                      </div>
+                    )}
                     </div>
                     {debugInfo?.debugRows?.length > 0 && (
                       <div className="border border-slate-200 rounded overflow-x-auto">
