@@ -618,6 +618,15 @@ export default function Breakdown() {
     } catch (e) { toast.error(formatApiError(e)); }
   };
 
+  const cleanupReasons = async () => {
+    if (!window.confirm(ar ? "هل تريد دمج الأسباب المكررة؟ لا يمكن التراجع." : "Merge duplicate reasons? This cannot be undone.")) return;
+    try {
+      const { data } = await api.post("/breakdowns/cleanup-reasons");
+      toast.success(ar ? `✓ تم تحديث ${data.total_updated} سجل` : `✓ Updated ${data.total_updated} records`);
+      load();
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
   const togglePlanned = async (id, current) => {
     try {
       await api.patch(`/breakdowns/${id}/planned`, { is_planned: !current });
@@ -818,7 +827,15 @@ export default function Breakdown() {
             {filtered.length} {ar ? "نتيجة" : "results"}
           </span>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 flex-wrap">
+          <button
+            onClick={cleanupReasons}
+            className="h-10 px-4 bg-amber-600 text-white font-semibold flex items-center gap-2 hover:bg-amber-700 text-sm"
+            title={ar ? "دمج الأسباب المكررة" : "Merge duplicate reasons"}
+          >
+            <Gear size={16} weight="bold" />
+            {ar ? "دمج الأسباب" : "Merge Reasons"}
+          </button>
           <button
             onClick={() => setShowImport(true)}
             className="h-10 px-4 bg-[#6B2D6B] text-white font-semibold flex items-center gap-2 hover:bg-[#5a2559] text-sm"
