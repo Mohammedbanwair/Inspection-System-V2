@@ -5,7 +5,7 @@ import { useI18n } from "../../lib/i18n";
 import { FileXls, FilePdf } from "@phosphor-icons/react";
 import {
   ResponsiveContainer,
-  LineChart, Line,
+  ComposedChart, LineChart, Line,
   BarChart, Bar,
   PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -228,23 +228,82 @@ export default function Analytics() {
 
           {/* Row 1: Monthly Trend + Specialty Pie */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-            {/* Monthly Trend LineChart */}
+            {/* Monthly Trend ComposedChart */}
             <div className="lg:col-span-2 bg-white border border-slate-200 p-4 sm:p-5">
-              <h3 className="text-sm font-bold text-slate-700 mb-4">{t("chart_monthly_trend")}</h3>
+              <h3 className="text-sm font-bold text-slate-700 mb-1">{t("chart_monthly_trend")}</h3>
+              <div className="flex gap-4 text-xs text-slate-500 mb-3 flex-wrap">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-red-400" />
+                  {ar ? "غير مخططة" : "Unplanned"}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-emerald-500" />
+                  {ar ? "مخططة (PM)" : "Planned (PM)"}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-5 h-0.5 bg-blue-500" style={{ borderTop: "2px dashed #3B82F6" }} />
+                  {ar ? "ساعات التوقف" : "Downtime (h)"}
+                </span>
+              </div>
               <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={data.monthly_trend} margin={{ top: 4, right: 16, left: -16, bottom: 0 }}>
+                <ComposedChart
+                  data={data.monthly_trend.map((d) => ({
+                    ...d,
+                    unplanned_count: (d.count || 0) - (d.planned_count || 0),
+                  }))}
+                  margin={{ top: 4, right: 40, left: -10, bottom: 0 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} tickFormatter={(v) => v.split(" ")[0]} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
-                  <Line type="monotone" dataKey="count"          name={t("chart_breakdowns")}
-                        stroke={PURPLE}   strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="downtime_hours" name={t("chart_downtime")}
-                        stroke={ELEC_CLR} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="planned_count"  name={ar ? "مخططة (PM)" : "Planned (PM)"}
-                        stroke={PM_CLR}   strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} strokeDasharray="4 2" />
-                </LineChart>
+                  <YAxis yAxisId="left" tick={{ fontSize: 10 }} allowDecimals={false} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: ELEC_CLR }} unit="h" />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const unplanned = payload.find((p) => p.dataKey === "unplanned_count");
+                      const planned   = payload.find((p) => p.dataKey === "planned_count");
+                      const downtime  = payload.find((p) => p.dataKey === "downtime_hours");
+                      const total     = (unplanned?.value || 0) + (planned?.value || 0);
+                      return (
+                        <div className="bg-white border border-slate-200 shadow-lg rounded px-3 py-2 text-xs min-w-[140px]">
+                          <div className="font-bold text-slate-700 mb-1.5">{label}</div>
+                          <div className="space-y-0.5">
+                            <div className="flex justify-between gap-3">
+                              <span className="text-slate-500">{ar ? "الإجمالي" : "Total"}</span>
+                              <span className="font-bold text-slate-800">{total}</span>
+                            </div>
+                            {unplanned && (
+                              <div className="flex justify-between gap-3">
+                                <span style={{ color: "#EF4444" }}>{ar ? "غير مخطط" : "Unplanned"}</span>
+                                <span className="font-semibold">{unplanned.value}</span>
+                              </div>
+                            )}
+                            {planned && (
+                              <div className="flex justify-between gap-3">
+                                <span style={{ color: "#10B981" }}>{ar ? "مخطط (PM)" : "Planned (PM)"}</span>
+                                <span className="font-semibold">{planned.value}</span>
+                              </div>
+                            )}
+                            {downtime && (
+                              <div className="flex justify-between gap-3 border-t border-slate-100 pt-0.5 mt-0.5">
+                                <span style={{ color: ELEC_CLR }}>{ar ? "التوقف" : "Downtime"}</span>
+                                <span className="font-semibold">{downtime.value}h</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar yAxisId="left" dataKey="unplanned_count" name={ar ? "غير مخططة" : "Unplanned"}
+                       stackId="bd" fill="#EF4444" fillOpacity={0.85} radius={[0, 0, 0, 0]} maxBarSize={40} />
+                  <Bar yAxisId="left" dataKey="planned_count"   name={ar ? "مخططة (PM)" : "Planned (PM)"}
+                       stackId="bd" fill="#10B981" fillOpacity={0.85} radius={[3, 3, 0, 0]} maxBarSize={40} />
+                  <Line yAxisId="right" type="monotone" dataKey="downtime_hours"
+                        name={ar ? "ساعات التوقف" : "Downtime (h)"}
+                        stroke={ELEC_CLR} strokeWidth={2} dot={{ r: 3, fill: ELEC_CLR }}
+                        activeDot={{ r: 5 }} strokeDasharray="5 3" />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
 
