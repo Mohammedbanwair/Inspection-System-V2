@@ -225,25 +225,73 @@ function buildDatetime(dStr, tStr, nextDay = false) {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 }
 
+const DATE_KEYS   = ["date", "تاريخ", "date"];
+const MNUM_KEYS   = ["machine number", "machine no", "machine", "مكينة", "رقم المكينة", "m/c", "m\\c"];
+const FROM_KEYS   = ["from", "start", "من", "بداية"];
+const TO_KEYS     = ["to", "end", "إلى", "نهاية"];
+const REASON_KEYS = ["reason", "cause", "السبب", "سبب", "description"];
+
+function findCol(headerRow, keys) {
+  if (!headerRow) return -1;
+  for (let c = 0; c < headerRow.length; c++) {
+    const cell = String(headerRow[c] ?? "").toLowerCase().trim();
+    if (keys.some((k) => cell.includes(k))) return c;
+  }
+  return -1;
+}
+
 function parseExcelRows(ab, machineMap) {
   const wb = XLSX.read(ab, { type: "array", cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const raw = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
 
+  // Find header row (first row that contains recognizable column names)
+  let headerIdx = -1;
+  let colDate = -1, colMnum = -1, colFrom = -1, colTo = -1, colReason = -1;
+
+  for (let i = 0; i < Math.min(10, raw.length); i++) {
+    const row = raw[i];
+    if (!row) continue;
+    const d = findCol(row, DATE_KEYS);
+    const m = findCol(row, MNUM_KEYS);
+    const r = findCol(row, REASON_KEYS);
+    if (d >= 0 && m >= 0 && r >= 0) {
+      headerIdx = i;
+      colDate   = d;
+      colMnum   = m;
+      colFrom   = findCol(row, FROM_KEYS);
+      colTo     = findCol(row, TO_KEYS);
+      colReason = r;
+      break;
+    }
+  }
+
+  // Fallback to fixed indices if header not found (original file layout)
+  if (headerIdx === -1) {
+    headerIdx = 2; // row 3 (0-indexed) is the header in the original file
+    colDate   = 7;
+    colMnum   = 9;
+    colFrom   = 11;
+    colTo     = 12;
+    colReason = 14;
+  }
+
   const records = [];
   const skipped = [];
 
-  for (let i = 3; i < raw.length; i++) {
+  for (let i = headerIdx + 1; i < raw.length; i++) {
     const row = raw[i];
-    const date  = row[7];
-    const mNum  = row[9];
-    const tFrom = row[11];
-    const tTo   = row[12];
-    const reason = row[14];
+    if (!row) continue;
+
+    const date   = colDate   >= 0 ? row[colDate]   : null;
+    const mNum   = colMnum   >= 0 ? row[colMnum]   : null;
+    const tFrom  = colFrom   >= 0 ? row[colFrom]   : null;
+    const tTo    = colTo     >= 0 ? row[colTo]     : null;
+    const reason = colReason >= 0 ? row[colReason] : null;
 
     if (!date || !mNum || !reason) continue;
 
-    const dStr = dateStr(date);
+    const dStr    = dateStr(date);
     const fromStr = timeSerial(tFrom);
     const toStr   = timeSerial(tTo);
     if (!dStr || !fromStr || !toStr) { skipped.push(i + 1); continue; }
@@ -257,13 +305,13 @@ function parseExcelRows(ab, machineMap) {
     if (!start || !end) { skipped.push(i + 1); continue; }
 
     records.push({
-      machine_id:        machId,
-      machine_num:       parseInt(mNum),
-      brief_description: String(reason).trim(),
+      machine_id:         machId,
+      machine_num:        parseInt(mNum),
+      brief_description:  String(reason).trim(),
       repair_description: "",
-      start_time:        start,
-      end_time:          end,
-      is_planned:        PLANNED_RE.test(String(reason)),
+      start_time:         start,
+      end_time:           end,
+      is_planned:         PLANNED_RE.test(String(reason)),
     });
   }
   return { records, skipped };
@@ -348,14 +396,22 @@ function ExcelImportModal({ machines, ar, onClose, onDone }) {
           {rows && !progress && (
             <>
               <div className="text-sm space-y-1">
-                <p className="font-semibold text-slate-800">
-                  {ar ? `تم قراءة ${rows.length} سجل` : `${rows.length} records parsed`}
-                  {skipped.length > 0 && (
-                    <span className="text-amber-600 ms-2 font-normal text-xs">
-                      ({ar ? `${skipped.length} سطر تم تخطيه` : `${skipped.length} rows skipped`})
-                    </span>
-                  )}
-                </p>
+                {rows.length === 0 ? (
+                  <div className="bg-red-50 border border-red-200 rounded p-3 text-red-700 text-xs space-y-1">
+                    <p className="font-bold">{ar ? "لم يتم قراءة أي سجل" : "No records found"}</p>
+                    <p>{ar ? "تأكد أن الملف يحتوي على أعمدة: date, machine number, from, to, reason" : "Make sure the file has columns: date, machine number, from, to, reason"}</p>
+                    <p className="text-slate-500">{ar ? `سطور تم تخطيها: ${skipped.length}` : `Skipped rows: ${skipped.length}`}</p>
+                  </div>
+                ) : (
+                  <p className="font-semibold text-slate-800">
+                    {ar ? `تم قراءة ${rows.length} سجل` : `${rows.length} records parsed`}
+                    {skipped.length > 0 && (
+                      <span className="text-amber-600 ms-2 font-normal text-xs">
+                        ({ar ? `${skipped.length} سطر تم تخطيه` : `${skipped.length} rows skipped`})
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
 
               {/* Mini preview table */}
