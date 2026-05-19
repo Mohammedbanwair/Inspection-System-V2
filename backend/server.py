@@ -2057,7 +2057,7 @@ async def list_breakdowns(
         if date_from: rng["$gte"] = date_from
         if date_to: rng["$lte"] = date_to + "T23:59:59"
         q["start_time"] = rng
-    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", -1).to_list(500)
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", -1).to_list(5000)
     return docs
 
 
@@ -2067,6 +2067,37 @@ async def delete_breakdown(bid: str, _=Depends(require_admin)):
     if res.deleted_count == 0:
         raise HTTPException(404, "غير موجود")
     return {"ok": True}
+
+
+@api.post("/breakdowns/sync-reasons")
+async def sync_reasons_from_breakdowns(_=Depends(require_admin)):
+    """Build downtime_reasons from unique brief_description values in breakdowns."""
+    pipeline = [
+        {"$group": {"_id": "$brief_description"}},
+        {"$match": {"_id": {"$ne": None, "$ne": ""}}},
+        {"$sort": {"_id": 1}},
+    ]
+    existing = await db.downtime_reasons.find({}, {"_id": 0, "text": 1}).to_list(1000)
+    existing_texts = {e["text"] for e in existing}
+    unique_reasons = await db.breakdowns.aggregate(pipeline).to_list(500)
+    added = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+    count = await db.downtime_reasons.count_documents({})
+    for r in unique_reasons:
+        text = r["_id"].strip()
+        if not text or text in existing_texts:
+            continue
+        count += 1
+        await db.downtime_reasons.insert_one({
+            "id": str(uuid.uuid4()),
+            "text": text,
+            "specialty": None,
+            "order": count,
+            "created_at": now_iso,
+        })
+        existing_texts.add(text)
+        added += 1
+    return {"ok": True, "added": added, "total": count}
 
 
 @api.post("/breakdowns/cleanup-reasons")
@@ -2792,8 +2823,8 @@ async def get_maintenance_analytics(
     trend_start_str = f"{trend_start_y:04d}-{trend_start_m:02d}-01"
 
     trend_bdocs = await db.breakdowns.find(
-        {"created_at": {"$gte": trend_start_str}},
-        {"_id": 0, "created_at": 1, "start_time": 1, "end_time": 1},
+        {"start_time": {"$gte": trend_start_str}},
+        {"_id": 0, "start_time": 1, "end_time": 1},
     ).to_list(10000)
     bd_by_ym: dict = defaultdict(list)
     for d in trend_bdocs:

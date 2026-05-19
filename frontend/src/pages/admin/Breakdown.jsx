@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
 import {
   Trash, Calendar, Gauge,
-  Gear, Plus, PencilSimple, X, FileXls, UploadSimple,
+  Plus, PencilSimple, X, FileXls, UploadSimple,
 } from "@phosphor-icons/react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -574,7 +574,6 @@ export default function Breakdown() {
   const [machineId, setMachineId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [showReasons, setShowReasons] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -614,15 +613,6 @@ export default function Breakdown() {
     try {
       await api.delete(`/breakdowns/${id}`);
       toast.success("✓");
-      load();
-    } catch (e) { toast.error(formatApiError(e)); }
-  };
-
-  const cleanupReasons = async () => {
-    if (!window.confirm(ar ? "هل تريد دمج الأسباب المكررة؟ لا يمكن التراجع." : "Merge duplicate reasons? This cannot be undone.")) return;
-    try {
-      const { data } = await api.post("/breakdowns/cleanup-reasons");
-      toast.success(ar ? `✓ تم تحديث ${data.total_updated} سجل` : `✓ Updated ${data.total_updated} records`);
       load();
     } catch (e) { toast.error(formatApiError(e)); }
   };
@@ -669,10 +659,10 @@ export default function Breakdown() {
   const today    = list.filter((b) => new Date(b.created_at).toDateString() === todayStr).length;
   const totalDowntimeMins = list.reduce((sum, b) => sum + (calcDurationMins(b.start_time, b.end_time) || 0), 0);
 
-  // Chart data — daily counts (last 14 days with data)
+  // Chart data — daily counts by actual breakdown date (last 14 days with data)
   const dailyCounts = {};
   list.forEach((b) => {
-    const day = b.created_at?.slice(5, 10) || ""; // MM-DD
+    const day = (b.start_time || b.created_at || "").slice(5, 10);
     if (day) dailyCounts[day] = (dailyCounts[day] || 0) + 1;
   });
   const barData = Object.entries(dailyCounts)
@@ -761,27 +751,6 @@ export default function Breakdown() {
         </div>
       )}
 
-      {/* Manage Reasons collapsible */}
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 mb-4 rounded-lg">
-        <button
-          onClick={() => setShowReasons((v) => !v)}
-          className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors"
-        >
-          <div className="flex items-center gap-2 font-semibold text-sm text-slate-700">
-            <Gear size={16} weight="bold" />
-            {t("manage_reasons")}
-          </div>
-          <span className="text-xs text-slate-400">{showReasons ? "▲" : "▼"}</span>
-        </button>
-        {showReasons && (
-          <div className="px-5 pb-5 border-t border-slate-100">
-            <div className="pt-4">
-              <ManageReasons t={t} ar={ar} />
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* Filters */}
       <form onSubmit={apply} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 sm:p-5 mb-4 rounded-lg">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
@@ -828,14 +797,6 @@ export default function Breakdown() {
           </span>
         </div>
         <div className="flex gap-2 shrink-0 flex-wrap">
-          <button
-            onClick={cleanupReasons}
-            className="h-10 px-4 bg-amber-600 text-white font-semibold flex items-center gap-2 hover:bg-amber-700 text-sm"
-            title={ar ? "دمج الأسباب المكررة" : "Merge duplicate reasons"}
-          >
-            <Gear size={16} weight="bold" />
-            {ar ? "دمج الأسباب" : "Merge Reasons"}
-          </button>
           <button
             onClick={() => setShowImport(true)}
             className="h-10 px-4 bg-[#6B2D6B] text-white font-semibold flex items-center gap-2 hover:bg-[#5a2559] text-sm"
