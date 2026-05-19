@@ -2069,6 +2069,41 @@ async def delete_breakdown(bid: str, _=Depends(require_admin)):
     return {"ok": True}
 
 
+@api.post("/breakdowns/cleanup-reasons")
+async def cleanup_breakdown_reasons(_=Depends(require_admin)):
+    """One-time endpoint: normalise duplicate/misspelled brief_description values."""
+    _REASON_MAP = {
+        "ROPOT MALFUNCTION":               "ROBOT MALFUNCTION",
+        "CHELLER B-DOWN":                  "CHILLER B-DOWN",
+        "COMPROSSER B-DOWN":               "COMPRESSOR B-DOWN",
+        "ELECTRIC POWER FAIL URE":         "ELECTRICAL POWER FAILURE",
+        "ELECTRIC POWER FAIL URE ":        "ELECTRICAL POWER FAILURE",
+        "ELECTRICL POWER FAILURE":         "ELECTRICAL POWER FAILURE",
+        "HOT RUINNIER CONTROL BOX B-DOWN": "HOT RUNNER CONTROL BOX B-DOWN",
+        "MACHINE UNDER MAINTENACE":        "PREVENTIVE MAINTENANCE",
+        "NOZZEL HEATER MALFUNCTION":       "NOZZLE HEATER MALFUNCTION",
+        "OIL LEKAGE":                      "OIL LEAKAGE",
+        "M/C C.TOWER PIPE BROKEN":         "COOLING TOWER PIPE BROKEN",
+        "C.TOWER NO WATER":                "COOLING TOWER NO WATER",
+        "COOLING TOWER B-DOWN ":           "COOLING TOWER B-DOWN",
+        "AIR SUPPLY LOW":                  "NO AIR SUPPLY",
+    }
+    total = 0
+    details = {}
+    for old, new in _REASON_MAP.items():
+        is_planned = bool(re.search(
+            r'PREVENTIVE|PM\b|PLANNED|SCHEDULED|وقائية|مجدولة', new, re.IGNORECASE
+        ))
+        res = await db.breakdowns.update_many(
+            {"brief_description": old},
+            {"$set": {"brief_description": new, "is_planned": is_planned}},
+        )
+        if res.modified_count:
+            details[old] = {"new": new, "count": res.modified_count}
+            total += res.modified_count
+    return {"ok": True, "total_updated": total, "details": details}
+
+
 @api.patch("/breakdowns/{bid}/planned")
 async def update_breakdown_planned(bid: str, body: BreakdownPlannedUpdate, _=Depends(require_admin)):
     res = await db.breakdowns.update_one({"id": bid}, {"$set": {"is_planned": body.is_planned}})
