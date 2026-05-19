@@ -2023,7 +2023,7 @@ async def create_breakdown(body: BreakdownCreate, user=Depends(get_current_user)
         "submitter_role": user["role"],
         "is_planned": is_planned,
         "status": "submitted",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": body.start_time or datetime.now(timezone.utc).isoformat(),
     }
     await db.breakdowns.insert_one(doc)
     doc.pop("_id", None)
@@ -2056,8 +2056,8 @@ async def list_breakdowns(
         rng: dict = {}
         if date_from: rng["$gte"] = date_from
         if date_to: rng["$lte"] = date_to + "T23:59:59"
-        q["created_at"] = rng
-    docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+        q["start_time"] = rng
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", -1).to_list(500)
     return docs
 
 
@@ -2139,8 +2139,8 @@ async def export_breakdowns_excel(
         rng: dict = {}
         if date_from: rng["$gte"] = date_from
         if date_to: rng["$lte"] = date_to + "T23:59:59"
-        q["created_at"] = rng
-    docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+        q["start_time"] = rng
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", -1).to_list(2000)
 
     PURPLE       = "6B2D6B"
     PURPLE_LIGHT = "F3E8F3"
@@ -2239,7 +2239,7 @@ async def export_breakdowns_excel(
             mname += f" — {doc['machine_name']}"
         values = [
             ri + 1,
-            doc.get("created_at", "")[:10],
+            (doc.get("start_time") or doc.get("created_at",""))[:10],
             mname,
             doc.get("brief_description", ""),
             doc.get("technician_name", ""),
@@ -2654,20 +2654,20 @@ async def get_maintenance_analytics(
     # Build query for the filtered period
     q: dict = {}
     if date_from and date_to:
-        q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
+        q["start_time"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
         _p_start, _p_end = date_from[:10], date_to[:10]
     elif date_from:
-        q["created_at"] = {"$gte": date_from}
+        q["start_time"] = {"$gte": date_from}
         _p_start, _p_end = date_from[:10], now.strftime("%Y-%m-%d")
     elif year and month:
         import calendar as _cal
         nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
-        q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
+        q["start_time"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
         last_day = _cal.monthrange(eff_year, month)[1]
         _p_start = f"{eff_year:04d}-{month:02d}-01"
         _p_end   = f"{eff_year:04d}-{month:02d}-{last_day:02d}"
     elif year:
-        q["created_at"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
+        q["start_time"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
         _p_start, _p_end = f"{eff_year:04d}-01-01", f"{eff_year:04d}-12-31"
     else:
         _p_start = f"{now.year:04d}-01-01"
@@ -2682,7 +2682,7 @@ async def get_maintenance_analytics(
     except Exception:
         _fallback_h = 720.0
 
-    all_docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    all_docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", 1).to_list(5000)
 
     # Resolve technician specialties
     tech_ids = list({d["technician_id"] for d in all_docs if d.get("technician_id")})
@@ -2743,8 +2743,8 @@ async def get_maintenance_analytics(
 
     # Preventive maintenance count for the filtered period
     pm_q: dict = {"category": "preventive"}
-    if q.get("created_at"):
-        pm_q["created_at"] = q["created_at"]
+    if q.get("start_time"):
+        pm_q["created_at"] = q["start_time"]
     pm_total = await db.inspections.count_documents(pm_q)
 
     # Monthly trend — last 12 months (2 DB calls instead of 24)
@@ -2762,7 +2762,7 @@ async def get_maintenance_analytics(
     ).to_list(10000)
     bd_by_ym: dict = defaultdict(list)
     for d in trend_bdocs:
-        bd_by_ym[d["created_at"][:7]].append(d)
+        bd_by_ym[(d.get("start_time") or d.get("created_at",""))[:7]].append(d)
 
     pm_agg = await db.inspections.aggregate([
         {"$match": {"category": "preventive", "created_at": {"$gte": trend_start_str}}},
@@ -2833,18 +2833,18 @@ async def export_analytics_excel(
     eff_year = year or now.year
     q: dict = {}
     if date_from and date_to:
-        q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
+        q["start_time"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
     elif date_from:
-        q["created_at"] = {"$gte": date_from}
+        q["start_time"] = {"$gte": date_from}
     elif year and month:
         nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
-        q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
+        q["start_time"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
     elif year:
-        q["created_at"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
+        q["start_time"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
     if machine_id:
         q["machine_id"] = machine_id
 
-    docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", 1).to_list(5000)
     tech_ids = list({d["technician_id"] for d in docs if d.get("technician_id")})
     users_cur = await db.users.find({"id": {"$in": tech_ids}}, {"_id": 0, "id": 1, "specialty": 1}).to_list(500)
     tech_specialty = {u["id"]: u.get("specialty") for u in users_cur}
@@ -2922,7 +2922,7 @@ async def export_analytics_excel(
         bg   = PURPLE_LIGHT if ri % 2 == 0 else WHITE
         vals = [
             ri + 1,
-            doc.get("created_at","")[:10],
+            (doc.get("start_time") or doc.get("created_at",""))[:10],
             doc.get("machine_number",""),
             doc.get("_specialty","").capitalize() or "—",
             doc.get("brief_description",""),
@@ -2973,18 +2973,18 @@ async def export_analytics_pdf(
     eff_year = year or now.year
     q: dict = {}
     if date_from and date_to:
-        q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
+        q["start_time"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
     elif date_from:
-        q["created_at"] = {"$gte": date_from}
+        q["start_time"] = {"$gte": date_from}
     elif year and month:
         nx_y, nx_m = (eff_year + 1, 1) if month == 12 else (eff_year, month + 1)
-        q["created_at"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
+        q["start_time"] = {"$gte": f"{eff_year:04d}-{month:02d}-01", "$lt": f"{nx_y:04d}-{nx_m:02d}-01"}
     elif year:
-        q["created_at"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
+        q["start_time"] = {"$gte": f"{eff_year:04d}-01-01", "$lt": f"{eff_year+1:04d}-01-01"}
     if machine_id:
         q["machine_id"] = machine_id
 
-    docs = await db.breakdowns.find(q, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", 1).to_list(5000)
     tech_ids = list({d["technician_id"] for d in docs if d.get("technician_id")})
     users_cur = await db.users.find({"id": {"$in": tech_ids}}, {"_id": 0, "id": 1, "specialty": 1}).to_list(500)
     tech_specialty = {u["id"]: u.get("specialty") for u in users_cur}
