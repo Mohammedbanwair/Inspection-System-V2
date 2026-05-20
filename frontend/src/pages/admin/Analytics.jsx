@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { api, formatApiError, downloadBlob } from "../../lib/api";
 import { toast } from "sonner";
 import { useI18n } from "../../lib/i18n";
-import { FileXls, FilePdf } from "@phosphor-icons/react";
+import { FileXls, FilePdf, ArrowsOut, X as XIcon } from "@phosphor-icons/react";
 import {
   ResponsiveContainer,
   ComposedChart, LineChart, Line,
@@ -25,6 +25,39 @@ function fmtMttr(minutes) {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function FullscreenChart({ title, normalHeight = 220, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="relative group" style={{ height: normalHeight }}>
+        {children}
+        <button
+          onClick={() => setOpen(true)}
+          className="absolute top-1 end-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 border border-slate-200 text-slate-400 hover:text-slate-700 rounded"
+          title="توسيع"
+        >
+          <ArrowsOut size={13} />
+        </button>
+      </div>
+      {open && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6" onClick={() => setOpen(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <span className="font-bold text-slate-700">{title}</span>
+              <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <XIcon size={20} />
+              </button>
+            </div>
+            <div className="p-5" style={{ height: "65vh" }}>
+              {children}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 function KpiCard({ label, value, sub, accent }) {
@@ -245,7 +278,8 @@ export default function Analytics() {
                   {ar ? "ساعات التوقف" : "Downtime (h)"}
                 </span>
               </div>
-              <ResponsiveContainer width="100%" height={220}>
+              <FullscreenChart title={t("chart_monthly_trend")} normalHeight={220}>
+              <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
                   data={data.monthly_trend.map((d) => ({
                     ...d,
@@ -305,13 +339,15 @@ export default function Analytics() {
                         activeDot={{ r: 5 }} strokeDasharray="5 3" />
                 </ComposedChart>
               </ResponsiveContainer>
+              </FullscreenChart>
             </div>
 
             {/* Specialty Pie */}
             <div className="bg-white border border-slate-200 p-4 sm:p-5">
               <h3 className="text-sm font-bold text-slate-700 mb-4">{t("chart_by_specialty")}</h3>
               {pieData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
+                <FullscreenChart title={t("chart_by_specialty")} normalHeight={220}>
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85}
                          dataKey="value" nameKey="name" paddingAngle={3}>
@@ -322,6 +358,7 @@ export default function Analytics() {
                     <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
                   </PieChart>
                 </ResponsiveContainer>
+                </FullscreenChart>
               ) : (
                 <div className="h-[220px] flex items-center justify-center text-slate-400 text-sm">
                   {ar ? "لا توجد بيانات" : "No data"}

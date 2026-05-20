@@ -291,6 +291,16 @@ class BreakdownCreate(BaseModel):
     start_time: Optional[str] = ""
     end_time: Optional[str] = ""
     is_planned: Optional[bool] = None  # None = auto-detect from brief_description
+    specialty: Optional[Literal["electrical", "mechanical"]] = None
+
+
+class BreakdownBulkDelete(BaseModel):
+    ids: List[str]
+
+
+class BreakdownTimesUpdate(BaseModel):
+    start_time: str
+    end_time: str
 
 
 class BreakdownPlannedUpdate(BaseModel):
@@ -2026,6 +2036,7 @@ async def create_breakdown(body: BreakdownCreate, user=Depends(get_current_user)
         "technician_name": user["name"],
         "submitter_role": user["role"],
         "is_planned": is_planned,
+        "specialty": body.specialty,
         "status": "submitted",
         "created_at": body.start_time or datetime.now(timezone.utc).isoformat(),
     }
@@ -2061,8 +2072,16 @@ async def list_breakdowns(
         if date_from: rng["$gte"] = date_from
         if date_to: rng["$lte"] = date_to + "T23:59:59"
         q["start_time"] = rng
-    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", -1).to_list(5000)
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", -1).to_list(50000)
     return docs
+
+
+@api.delete("/breakdowns/bulk")
+async def bulk_delete_breakdowns(body: BreakdownBulkDelete, _=Depends(require_admin)):
+    if not body.ids:
+        return {"deleted": 0}
+    res = await db.breakdowns.delete_many({"id": {"$in": body.ids}})
+    return {"deleted": res.deleted_count}
 
 
 @api.delete("/breakdowns/{bid}")
@@ -2142,6 +2161,21 @@ async def cleanup_breakdown_reasons(_=Depends(require_admin)):
 @api.patch("/breakdowns/{bid}/planned")
 async def update_breakdown_planned(bid: str, body: BreakdownPlannedUpdate, _=Depends(require_admin)):
     res = await db.breakdowns.update_one({"id": bid}, {"$set": {"is_planned": body.is_planned}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "غير موجود")
+    return {"ok": True}
+
+
+@api.patch("/breakdowns/{bid}/times")
+async def update_breakdown_times(bid: str, body: BreakdownTimesUpdate, _=Depends(require_admin)):
+    start = body.start_time.strip()
+    end   = body.end_time.strip()
+    if not start or not end:
+        raise HTTPException(400, "الوقت لا يمكن أن يكون فارغاً")
+    res = await db.breakdowns.update_one(
+        {"id": bid},
+        {"$set": {"start_time": start, "end_time": end}},
+    )
     if res.matched_count == 0:
         raise HTTPException(404, "غير موجود")
     return {"ok": True}
@@ -2763,15 +2797,18 @@ async def get_maintenance_analytics(
     except Exception:
         _fallback_h = 720.0
 
-    all_docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", 1).to_list(5000)
+    all_docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", 1).to_list(50000)
 
     # Resolve technician specialties
     tech_ids = list({d["technician_id"] for d in all_docs if d.get("technician_id")})
     users_cur = await db.users.find({"id": {"$in": tech_ids}}, {"_id": 0, "id": 1, "specialty": 1}).to_list(500)
     tech_specialty = {u["id"]: u.get("specialty") for u in users_cur}
 
+    def _doc_specialty(d):
+        return d.get("specialty") or tech_specialty.get(d.get("technician_id", ""))
+
     if specialty:
-        all_docs = [d for d in all_docs if tech_specialty.get(d.get("technician_id", "")) == specialty]
+        all_docs = [d for d in all_docs if _doc_specialty(d) == specialty]
 
     for d in all_docs:
         d["_minutes"] = _calc_duration_minutes(d.get("start_time", ""), d.get("end_time", ""))
@@ -2796,8 +2833,8 @@ async def get_maintenance_analytics(
     else:
         mtbf_h = 0.0
 
-    elec_docs = [d for d in all_docs if tech_specialty.get(d.get("technician_id", "")) == "electrical"]
-    mech_docs = [d for d in all_docs if tech_specialty.get(d.get("technician_id", "")) == "mechanical"]
+    elec_docs = [d for d in all_docs if _doc_specialty(d) == "electrical"]
+    mech_docs = [d for d in all_docs if _doc_specialty(d) == "mechanical"]
 
     machine_stats: dict = defaultdict(lambda: {"count": 0, "minutes": 0, "name": ""})
     reason_counts: dict = defaultdict(int)
@@ -2926,7 +2963,7 @@ async def export_analytics_excel(
     if machine_id:
         q["machine_id"] = machine_id
 
-    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", 1).to_list(5000)
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", 1).to_list(50000)
     tech_ids = list({d["technician_id"] for d in docs if d.get("technician_id")})
     users_cur = await db.users.find({"id": {"$in": tech_ids}}, {"_id": 0, "id": 1, "specialty": 1}).to_list(500)
     tech_specialty = {u["id"]: u.get("specialty") for u in users_cur}
@@ -3066,7 +3103,7 @@ async def export_analytics_pdf(
     if machine_id:
         q["machine_id"] = machine_id
 
-    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", 1).to_list(5000)
+    docs = await db.breakdowns.find(q, {"_id": 0}).sort("start_time", 1).to_list(50000)
     tech_ids = list({d["technician_id"] for d in docs if d.get("technician_id")})
     users_cur = await db.users.find({"id": {"$in": tech_ids}}, {"_id": 0, "id": 1, "specialty": 1}).to_list(500)
     tech_specialty = {u["id"]: u.get("specialty") for u in users_cur}
