@@ -6,6 +6,7 @@ import { useI18n } from "../../lib/i18n";
 import {
   Trash, Calendar, Gauge,
   Gear, Plus, PencilSimple, X, FileXls, UploadSimple, ArrowsClockwise,
+  ArrowsOut, Clock,
 } from "@phosphor-icons/react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -66,6 +67,132 @@ function SpecialtyBadge({ specialty, ar }) {
     }`}>
       {isElec ? (ar ? "كهرباء" : "Elec") : (ar ? "ميكانيكا" : "Mech")}
     </span>
+  );
+}
+
+// ── Fullscreen Chart Wrapper ──────────────────────────────────────────────────
+
+function FullscreenChart({ title, normalHeight = 160, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="relative group" style={{ height: normalHeight }}>
+        {children}
+        <button
+          onClick={() => setOpen(true)}
+          className="absolute top-1 end-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 border border-slate-200 text-slate-400 hover:text-slate-700 rounded"
+          title="توسيع"
+        >
+          <ArrowsOut size={13} />
+        </button>
+      </div>
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-5xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <span className="font-bold text-slate-700">{title}</span>
+              <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5" style={{ height: "65vh" }}>
+              {children}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Edit Times Modal ──────────────────────────────────────────────────────────
+
+function EditTimesModal({ breakdown, ar, onClose, onSaved }) {
+  const [start, setStart] = useState((breakdown.start_time || "").slice(0, 16));
+  const [end,   setEnd]   = useState((breakdown.end_time   || "").slice(0, 16));
+  const [saving, setSaving] = useState(false);
+
+  const duration = (() => {
+    if (!start || !end) return "—";
+    const diff = Math.round((new Date(end) - new Date(start)) / 60000);
+    if (diff <= 0) return "—";
+    return `${Math.floor(diff / 60)}h ${String(diff % 60).padStart(2, "0")}m`;
+  })();
+
+  const save = async () => {
+    if (!start || !end) return;
+    setSaving(true);
+    try {
+      await api.patch(`/breakdowns/${breakdown.id}/times`, { start_time: start, end_time: end });
+      onSaved({ ...breakdown, start_time: start, end_time: end });
+      toast.success(ar ? "✓ تم تحديث الوقت" : "✓ Times updated");
+      onClose();
+    } catch (e) { toast.error(formatApiError(e)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <span className="font-bold text-slate-800 text-sm">
+            {ar ? "تعديل وقت التوقف" : "Edit Breakdown Times"}
+          </span>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="text-xs text-slate-500 mb-1">
+            {breakdown.machine_number} — <span className="truncate">{breakdown.brief_description}</span>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                {ar ? "وقت البداية" : "Start Time"}
+              </label>
+              <input
+                type="datetime-local"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                className="w-full h-10 px-3 border border-slate-300 text-sm"
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                {ar ? "وقت النهاية" : "End Time"}
+              </label>
+              <input
+                type="datetime-local"
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                className="w-full h-10 px-3 border border-slate-300 text-sm"
+                dir="ltr"
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded">
+            <span>{ar ? "المدة المحسوبة" : "Calculated duration"}</span>
+            <span className="font-bold text-[#6B2D6B]">{duration}</span>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={onClose}
+                    className="flex-1 h-10 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold">
+              {ar ? "إلغاء" : "Cancel"}
+            </button>
+            <button onClick={save} disabled={saving || !start || !end}
+                    className="flex-1 h-10 bg-[#6B2D6B] text-white font-bold text-sm hover:bg-[#5a2559] disabled:opacity-50">
+              {saving ? "…" : (ar ? "حفظ" : "Save")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -348,6 +475,7 @@ function parseExcelRows(ab, machineMap) {
 }
 
 function ExcelImportModal({ machines, ar, onClose, onDone }) {
+  const [specialty, setSpecialty] = useState("");
   const fileRef = useRef(null);
   const [rows, setRows]         = useState(null);
   const [skipped, setSkipped]   = useState([]);
@@ -379,6 +507,7 @@ function ExcelImportModal({ machines, ar, onClose, onDone }) {
     let errors = 0;
     for (let i = 0; i < rows.length; i++) {
       const { machine_num, ...payload } = rows[i]; // eslint-disable-line no-unused-vars
+      if (specialty) payload.specialty = specialty;
       try {
         await api.post("/breakdowns", payload);
       } catch {
@@ -415,6 +544,20 @@ function ExcelImportModal({ machines, ar, onClose, onDone }) {
                   ? "اختر ملف Excel بنفس تنسيق الجدول (date / machine number / from / to / reason)"
                   : "Select an Excel file with columns: date, machine number, from, to, reason"}
               </p>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {ar ? "قسم التوقف (اختياري)" : "Specialty (optional)"}
+                </label>
+                <select
+                  value={specialty}
+                  onChange={(e) => setSpecialty(e.target.value)}
+                  className="w-full h-10 px-3 border border-slate-300 text-sm bg-white"
+                >
+                  <option value="">{ar ? "بدون تحديد" : "Not specified"}</option>
+                  <option value="electrical">{ar ? "كهربائي" : "Electrical"}</option>
+                  <option value="mechanical">{ar ? "ميكانيكي" : "Mechanical"}</option>
+                </select>
+              </div>
               <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
               <button
                 onClick={() => fileRef.current?.click()}
@@ -598,6 +741,8 @@ export default function Breakdown() {
   const [pageSize, setPageSize] = useState(25);
   const [editReasonId, setEditReasonId] = useState(null);
   const [editReasonText, setEditReasonText] = useState("");
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [editTimesBreakdown, setEditTimesBreakdown] = useState(null);
 
   useEffect(() => {
     api.get("/machines").then(({ data }) => setMachines(data)).catch(() => {});
@@ -643,6 +788,34 @@ export default function Breakdown() {
       await api.patch(`/breakdowns/${id}/planned`, { is_planned: !current });
       setList((prev) => prev.map((b) => b.id === id ? { ...b, is_planned: !current } : b));
     } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const bulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(ar
+      ? `هل تريد حذف ${selectedIds.size} توقف؟`
+      : `Delete ${selectedIds.size} breakdowns?`)) return;
+    try {
+      const { data } = await api.delete("/breakdowns/bulk", { data: { ids: [...selectedIds] } });
+      toast.success(ar ? `✓ حُذف ${data.deleted} توقف` : `✓ ${data.deleted} deleted`);
+      setSelectedIds(new Set());
+      load();
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const toggleSelect = (id) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((b) => b.id)));
+    }
   };
 
   const saveReason = async (id) => {
@@ -716,6 +889,17 @@ export default function Breakdown() {
 
   return (
     <div data-testid="breakdown-panel">
+      {editTimesBreakdown && (
+        <EditTimesModal
+          breakdown={editTimesBreakdown}
+          ar={ar}
+          onClose={() => setEditTimesBreakdown(null)}
+          onSaved={(updated) => {
+            setList((prev) => prev.map((b) => b.id === updated.id ? updated : b));
+            setEditTimesBreakdown(null);
+          }}
+        />
+      )}
       {showImport && (
         <ExcelImportModal
           machines={machines}
@@ -748,14 +932,16 @@ export default function Breakdown() {
             <div className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
               {ar ? "التوقفات اليومية" : "Daily Breakdowns"}
             </div>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={barData} margin={{ top: 0, right: 8, left: -20, bottom: 0 }}>
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v) => [v, ar ? "توقف" : "Breakdowns"]} />
-                <Bar dataKey="count" fill="#6B2D6B" radius={[3,3,0,0]} maxBarSize={32} />
-              </BarChart>
-            </ResponsiveContainer>
+            <FullscreenChart title={ar ? "التوقفات اليومية" : "Daily Breakdowns"} normalHeight={160}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={barData} margin={{ top: 0, right: 8, left: -20, bottom: 0 }}>
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v) => [v, ar ? "توقف" : "Breakdowns"]} />
+                  <Bar dataKey="count" fill="#6B2D6B" radius={[3,3,0,0]} maxBarSize={32} />
+                </BarChart>
+              </ResponsiveContainer>
+            </FullscreenChart>
           </div>
 
           {/* Pie chart — top causes */}
@@ -764,18 +950,20 @@ export default function Breakdown() {
               {ar ? "أبرز الأسباب" : "Top Causes"}
             </div>
             {pieData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie data={pieData} cx="40%" cy="50%" outerRadius={60} dataKey="value" label={({ value }) => value}>
-                    {pieData.map((_, idx) => <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Legend
-                    layout="vertical" align="right" verticalAlign="middle"
-                    formatter={(v) => <span style={{ fontSize: 10 }}>{v.length > 20 ? v.slice(0, 20) + "…" : v}</span>}
-                  />
-                  <Tooltip formatter={(v, n) => [v, n]} />
-                </PieChart>
-              </ResponsiveContainer>
+              <FullscreenChart title={ar ? "أبرز الأسباب" : "Top Causes"} normalHeight={160}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieData} cx="40%" cy="50%" outerRadius={60} dataKey="value" label={({ value }) => value}>
+                      {pieData.map((_, idx) => <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Legend
+                      layout="vertical" align="right" verticalAlign="middle"
+                      formatter={(v) => <span style={{ fontSize: 10 }}>{v.length > 20 ? v.slice(0, 20) + "…" : v}</span>}
+                    />
+                    <Tooltip formatter={(v, n) => [v, n]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </FullscreenChart>
             ) : (
               <div className="h-40 flex items-center justify-center text-slate-400 text-sm">{t("no_results")}</div>
             )}
@@ -867,10 +1055,42 @@ export default function Breakdown() {
         </div>
       </div>
 
+      {/* Bulk delete bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 px-4 py-2.5 rounded-lg mb-3">
+          <span className="text-sm font-semibold text-red-700">
+            {ar ? `${selectedIds.size} توقف محدد` : `${selectedIds.size} selected`}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="h-8 px-3 border border-red-200 text-red-600 hover:bg-red-100 text-xs font-semibold"
+            >
+              {ar ? "إلغاء التحديد" : "Deselect all"}
+            </button>
+            <button
+              onClick={bulkDelete}
+              className="h-8 px-4 bg-red-600 text-white text-xs font-bold hover:bg-red-700 flex items-center gap-1.5"
+            >
+              <Trash size={13} weight="bold" />
+              {ar ? `حذف ${selectedIds.size}` : `Delete ${selectedIds.size}`}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-x-auto rounded-lg">
         <table className="w-full text-sm min-w-[600px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
+              <th className="px-3 py-3 w-8">
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 cursor-pointer accent-[#6B2D6B]"
+                />
+              </th>
               <th className="text-start px-4 py-3 font-semibold">{t("date")}</th>
               <th className="text-start px-4 py-3 font-semibold">{ar ? "المكينة" : "Machine"}</th>
               <th className="text-start px-4 py-3 font-semibold">{t("technician")}</th>
@@ -884,15 +1104,23 @@ export default function Breakdown() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan="9" className="text-center text-slate-400 py-8">
+              <tr><td colSpan="10" className="text-center text-slate-400 py-8">
                 <div className="inline-block w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
               </td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan="9" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
+              <tr><td colSpan="10" className="text-center text-slate-500 py-8">{t("no_results")}</td></tr>
             )}
             {paginated.map((b, i) => (
-              <tr key={b.id} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : ""}`}>
+              <tr key={b.id} className={`border-t border-slate-100 ${selectedIds.has(b.id) ? "bg-red-50/60" : i % 2 ? "bg-slate-50/40" : ""}`}>
+                <td className="px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(b.id)}
+                    onChange={() => toggleSelect(b.id)}
+                    className="w-4 h-4 cursor-pointer accent-[#6B2D6B]"
+                  />
+                </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   {new Date(b.created_at).toLocaleString(ar ? "ar-EG" : "en-US", {
                     year: "numeric", month: "numeric", day: "numeric",
@@ -983,12 +1211,21 @@ export default function Breakdown() {
                   </button>
                 </td>
                 <td className="px-4 py-3">
-                  <button
-                    onClick={() => del(b.id)}
-                    className="h-9 w-9 border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center"
-                  >
-                    <Trash size={14} />
-                  </button>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setEditTimesBreakdown(b)}
+                      className="h-9 w-9 border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#6B2D6B] flex items-center justify-center"
+                      title={ar ? "تعديل الوقت" : "Edit times"}
+                    >
+                      <Clock size={14} />
+                    </button>
+                    <button
+                      onClick={() => del(b.id)}
+                      className="h-9 w-9 border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center"
+                    >
+                      <Trash size={14} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
