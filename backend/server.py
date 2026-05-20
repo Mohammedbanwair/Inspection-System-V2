@@ -3234,8 +3234,8 @@ async def get_my_permissions(user=Depends(get_current_user)):
 @api.get("/stats/monthly-breakdown")
 async def stats_monthly_breakdown(_=Depends(require_admin)):
     now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
-    docs = await db.breakdowns.find({"created_at": {"$gte": month_start}}, {"_id": 0}).to_list(1000)
+    month_start = f"{now.year:04d}-{now.month:02d}-01"
+    docs = await db.breakdowns.find({"start_time": {"$gte": month_start}}, {"_id": 0}).to_list(1000)
     total = len(docs)
     cause_counts: dict = defaultdict(int)
     total_minutes = 0
