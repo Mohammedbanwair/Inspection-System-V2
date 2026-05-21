@@ -58,6 +58,11 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 api = APIRouter(prefix="/api")
 
+
+@api.get("/health", include_in_schema=False)
+async def health_check():
+    return {"status": "ok"}
+
 # --- Rate limiting (in-memory, per IP) ---
 _login_attempts: dict = defaultdict(list)
 _RL_WINDOW = 15 * 60   # 15 minutes window
