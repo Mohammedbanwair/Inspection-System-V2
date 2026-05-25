@@ -125,8 +125,11 @@ export default function Inspections() {
     setTimeout(load, 0);
   };
 
+  const isPanelCategory = category === "panels_sub" || category === "panels_main";
+  const isCombinedMode  = isPanelCategory && !targetNum;
+
   const exportExcel = async () => {
-    if (!targetNum) {
+    if (!targetNum && !isPanelCategory) {
       toast.error(lang === "ar" ? "يجب اختيار المعدة" : "Equipment selection required");
       return;
     }
@@ -141,11 +144,11 @@ export default function Inspections() {
     try {
       const params = new URLSearchParams();
       Object.entries(getApiFilters()).forEach(([k, v]) => { if (v) params.append(k, v); });
-      await downloadBlob(
-        `/inspections/export/excel?${params}`,
-        `inspection_${targetNum}_${dateFrom}_${dateTo}.xlsx`
-      );
-      toast.success(lang === "ar" ? "تم تصدير Excel ✓" : "Excel exported ✓");
+      const fname = isCombinedMode
+        ? `panels_sub_combined_${dateFrom.slice(0, 7)}.xlsx`
+        : `inspection_${targetNum}_${dateFrom}_${dateTo}.xlsx`;
+      await downloadBlob(`/inspections/export/excel?${params}`, fname);
+      toast.success(lang === "ar" ? "تم التصدير ✓" : "Exported ✓");
     } catch (e) { toast.error(formatApiError(e)); }
   };
 
@@ -299,7 +302,10 @@ export default function Inspections() {
         <button onClick={exportExcel}
                 className="h-10 px-4 bg-[#1D6F42] text-white font-semibold flex items-center gap-2 hover:bg-[#155734] shrink-0"
                 data-testid="export-excel-button">
-          <FileXls size={16} weight="bold" /> {ar ? "تصدير Excel" : "Export Excel"}
+          <FileXls size={16} weight="bold" />
+          {isCombinedMode
+            ? (ar ? "تصدير تقرير مدمج" : "Export Combined Report")
+            : (ar ? "تصدير Excel" : "Export Excel")}
         </button>
       </div>
 

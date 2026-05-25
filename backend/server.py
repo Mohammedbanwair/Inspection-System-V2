@@ -1161,12 +1161,12 @@ async def export_excel(
     from datetime import date as date_cls, timedelta
     import calendar
 
-    if not target_number:
+    IS_PANEL = category in ("panels_main", "panels_sub")
+
+    if not IS_PANEL and not target_number:
         raise HTTPException(400, "يجب تحديد رقم المعدة")
     if not date_from or not date_to:
         raise HTTPException(400, "يجب تحديد نطاق التاريخ")
-
-    IS_PANEL = category in ("panels_main", "panels_sub")
 
     q: dict = {}
     if target_number: q["target_number"] = {"$regex": f"^{re.escape(target_number)}", "$options": "i"}
@@ -1206,7 +1206,7 @@ async def export_excel(
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
-    def build_sheet(ws, insp_by_key, columns, col_label_fn, total_cols):
+    def build_sheet(ws, insp_by_key, columns, col_label_fn, total_cols, panel_num=None):
         last_col = get_column_letter(total_cols)
         ws.sheet_view.showGridLines = False
         ws.column_dimensions["A"].width = 60
@@ -1243,7 +1243,8 @@ async def export_excel(
         ws.merge_cells(f"A4:{last_col}4")
         ic = ws["A4"]
         if IS_PANEL:
-            ic.value = f"   Panel #: {target_number}     Section: {cat_label}     Period: {d_from.strftime('%B %Y')}"
+            pnum_display = panel_num or target_number or "All"
+            ic.value = f"   Panel #: {pnum_display}     Section: {cat_label}     Period: {d_from.strftime('%B %Y')}"
         else:
             ic.value = (f"   {type_label} #: {target_number}     Section: {cat_label}     "
                         f"Period: {d_from.strftime('%d %b %Y')} to {d_to.strftime('%d %b %Y')}")
@@ -1390,20 +1391,25 @@ async def export_excel(
 
     # ── Build the sheet ──────────────────────────────────────────────────────
     if IS_PANEL:
-        insp_by_week: dict = {}
-        for insp in items:
-            d = date_cls.fromisoformat(insp["created_at"][:10])
-            first_day = date_cls(d.year, d.month, 1)
-            week_num = (d.day + first_day.weekday()) // 7 + 1
-            key = f"week_{week_num}"
-            insp_by_week[key] = insp
         first_day = date_cls(d_from.year, d_from.month, 1)
         last_day_num = calendar.monthrange(d_from.year, d_from.month)[1]
         num_weeks = (last_day_num + first_day.weekday()) // 7 + 1
         weeks = [f"week_{i}" for i in range(1, num_weeks + 1)]
         week_labels = {f"week_{i}": f"Week {i}" for i in range(1, num_weeks + 1)}
-        ws = wb.create_sheet(title=f"{target_number}"[:31])
-        build_sheet(ws, insp_by_week, weeks, lambda w: week_labels[w], len(weeks) + 1)
+
+        # Combined: one sheet per panel. Single: one sheet for the selected panel.
+        panel_nums = [target_number] if target_number else sorted({insp["target_number"] for insp in items})
+
+        for pnum in panel_nums:
+            panel_items = [i for i in items if i["target_number"] == pnum]
+            insp_by_week: dict = {}
+            for insp in panel_items:
+                d = date_cls.fromisoformat(insp["created_at"][:10])
+                fdom = date_cls(d.year, d.month, 1)
+                wk = (d.day + fdom.weekday()) // 7 + 1
+                insp_by_week[f"week_{wk}"] = insp
+            ws = wb.create_sheet(title=str(pnum)[:31])
+            build_sheet(ws, insp_by_week, weeks, lambda w, wl=week_labels: wl[w], len(weeks) + 1, panel_num=pnum)
     else:
         days = [d_from + timedelta(i) for i in range((d_to - d_from).days + 1)]
         insp_by_date: dict = {}
@@ -1415,7 +1421,11 @@ async def export_excel(
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    fname = f"inspection_{target_number}_{date_from}_{date_to}.xlsx"
+    fname = (
+        f"sub_panels_combined_{date_from[:7]}.xlsx"
+        if IS_PANEL and not target_number
+        else f"inspection_{target_number}_{date_from}_{date_to}.xlsx"
+    )
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
