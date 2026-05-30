@@ -163,15 +163,21 @@ export default function Inspections() {
       toast.error(ar ? "يجب اختيار القسم أولاً" : "Select a category first");
       return;
     }
+    if (!dateFrom || !dateTo) {
+      toast.error(ar ? "يجب تحديد نطاق التاريخ" : "Date range required");
+      return;
+    }
     try {
       const params = new URLSearchParams();
-      if (category)   params.append("category",    category);
-      if (tType && tType !== "panel") params.append("target_type", tType);
-      if (dateFrom)   params.append("date_from",   dateFrom);
-      if (dateTo)     params.append("date_to",     dateTo);
+      params.append("category",  category);
+      params.append("date_from", dateFrom);
+      params.append("date_to",   dateTo);
+      if (tType) params.append("target_type", tType);
       const catLabel = category.replace(/_/g, "-");
-      const label    = dateFrom ? `${dateFrom}_${dateTo}` : "all";
-      await downloadBlob(`/inspections/export/all-pdf?${params}`, `inspections_${catLabel}_${label}.pdf`);
+      await downloadBlob(
+        `/inspections/export/all-pdf?${params}`,
+        `inspections_all_${catLabel}_${dateFrom}_${dateTo}.pdf`
+      );
       toast.success(ar ? "تم التصدير ✓" : "Exported ✓");
     } catch (e) { toast.error(formatApiError(e)); }
   };
