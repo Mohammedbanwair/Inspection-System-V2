@@ -158,6 +158,24 @@ export default function Inspections() {
     } catch (e) { toast.error(formatApiError(e)); }
   };
 
+  const exportAllPDF = async () => {
+    if (!category) {
+      toast.error(ar ? "يجب اختيار القسم أولاً" : "Select a category first");
+      return;
+    }
+    try {
+      const params = new URLSearchParams();
+      if (category)   params.append("category",    category);
+      if (tType && tType !== "panel") params.append("target_type", tType);
+      if (dateFrom)   params.append("date_from",   dateFrom);
+      if (dateTo)     params.append("date_to",     dateTo);
+      const catLabel = category.replace(/_/g, "-");
+      const label    = dateFrom ? `${dateFrom}_${dateTo}` : "all";
+      await downloadBlob(`/inspections/export/all-pdf?${params}`, `inspections_${catLabel}_${label}.pdf`);
+      toast.success(ar ? "تم التصدير ✓" : "Exported ✓");
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
   const del = async (id) => {
     if (!window.confirm(t("confirm_delete"))) return;
     try { await api.delete(`/inspections/${id}`); toast.success("✓"); load(); }
@@ -299,14 +317,24 @@ export default function Inspections() {
             {filtered.length} {ar ? "نتيجة" : "results"}
           </span>
         </div>
-        <button onClick={exportExcel}
-                className="h-10 px-4 bg-[#1D6F42] text-white font-semibold flex items-center gap-2 hover:bg-[#155734] shrink-0"
-                data-testid="export-excel-button">
-          <FileXls size={16} weight="bold" />
-          {isCombinedMode
-            ? (ar ? "تصدير تقرير مدمج" : "Export Combined Report")
-            : (ar ? "تصدير Excel" : "Export Excel")}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={exportExcel}
+                  className="h-10 px-4 bg-[#1D6F42] text-white font-semibold flex items-center gap-2 hover:bg-[#155734]"
+                  data-testid="export-excel-button">
+            <FileXls size={16} weight="bold" />
+            {isCombinedMode
+              ? (ar ? "تصدير تقرير مدمج" : "Export Combined Report")
+              : (ar ? "تصدير Excel" : "Export Excel")}
+          </button>
+          <button
+            onClick={exportAllPDF}
+            className="h-10 px-4 bg-red-700 text-white font-semibold flex items-center gap-2 hover:bg-red-800"
+            title={ar ? "تصدير PDF لجميع المعدات" : "Export PDF for all equipment"}
+          >
+            <FilePdf size={16} weight="bold" />
+            {ar ? "PDF — جميع المعدات" : "PDF — All Equipment"}
+          </button>
+        </div>
       </div>
 
       <div className="bg-white border border-slate-200 overflow-x-auto">

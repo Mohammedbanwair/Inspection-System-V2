@@ -1432,6 +1432,198 @@ async def export_excel(
         headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
+@api.get("/inspections/export/all-pdf")
+async def export_all_inspections_pdf(
+    request: Request,
+    category: Optional[str] = None,
+    target_type: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    _=Depends(require_admin),
+):
+    _rl_check_export(request.client.host)
+    q: dict = {}
+    if category: q["category"] = category
+    if target_type: q["target_type"] = target_type
+    if date_from or date_to:
+        rng: dict = {}
+        if date_from: rng["$gte"] = date_from
+        if date_to: rng["$lte"] = date_to + "T23:59:59"
+        q["created_at"] = rng
+
+    items = await db.inspections.find(q, {"_id": 0}).sort(
+        [("target_number", 1), ("created_at", -1)]
+    ).to_list(50000)
+    if not items:
+        raise HTTPException(404, "لا توجد بيانات للفترة المحددة")
+
+    # Group by target_number
+    groups: dict = {}
+    for insp in items:
+        k = insp.get("target_number", "?")
+        groups.setdefault(k, []).append(insp)
+
+    def _stats(insp):
+        answers = insp.get("answers", [])
+        passed = sum(1 for a in answers if (a["a"] if "a" in a else a.get("answer", True)))
+        failed = len(answers) - passed
+        notes = "; ".join(
+            n for a in answers
+            if not (a["a"] if "a" in a else a.get("answer", True))
+            for n in [(a.get("n") or a.get("note") or "").strip()]
+            if n
+        )
+        return len(answers), passed, failed, notes[:90]
+
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.pagesizes import landscape as rl_landscape
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+        PageBreak, Image as RLImage,
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    LS = rl_landscape(A4)
+    PW_L = LS[0] - 3 * cm
+
+    PURPLE_C = rl_colors.Color(0x6B/255, 0x2D/255, 0x6B/255)
+    HEADER_C = rl_colors.Color(0x4A/255, 0x14/255, 0x42/255)
+    LIGHT_C  = rl_colors.Color(0xF3/255, 0xE8/255, 0xF3/255)
+
+    styles = getSampleStyleSheet()
+    def _pst(name, **kw): return ParagraphStyle(name, parent=styles["Normal"], **kw)
+    title_st = _pst("tit", fontSize=17, textColor=PURPLE_C, spaceAfter=3, fontName="Helvetica-Bold")
+    h2_st    = _pst("h2",  fontSize=11, textColor=HEADER_C, spaceBefore=8, spaceAfter=3, fontName="Helvetica-Bold")
+    sub_st   = _pst("sub", fontSize=9,  textColor=rl_colors.grey, spaceAfter=8)
+
+    def _tbl(hdr, rows, cw, left_cols=()):
+        t = Table([hdr] + rows, colWidths=cw, repeatRows=1, hAlign="LEFT")
+        cmd = [
+            ("BACKGROUND",     (0, 0), (-1, 0),  HEADER_C),
+            ("TEXTCOLOR",      (0, 0), (-1, 0),  rl_colors.white),
+            ("FONTNAME",       (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("FONTSIZE",       (0, 0), (-1, 0),  9),
+            ("FONTNAME",       (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE",       (0, 1), (-1, -1), 8),
+            ("ALIGN",          (0, 0), (-1, -1), "CENTER"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [rl_colors.white, LIGHT_C]),
+            ("GRID",           (0, 0), (-1, -1), 0.4, rl_colors.Color(0.78, 0.78, 0.78)),
+            ("BOX",            (0, 0), (-1, -1), 1.2, PURPLE_C),
+            ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",     (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING",  (0, 0), (-1, -1), 4),
+        ]
+        for c in left_cols:
+            cmd.append(("ALIGN", (c, 1), (c, -1), "LEFT"))
+        t.setStyle(TableStyle(cmd))
+        return t
+
+    buf = io.BytesIO()
+    pdfdoc = SimpleDocTemplate(
+        buf, pagesize=LS,
+        leftMargin=1.5*cm, rightMargin=1.5*cm,
+        topMargin=1.5*cm, bottomMargin=1.5*cm,
+    )
+    elements = []
+
+    # ── Cover page ───────────────────────────────────────────────
+    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
+    if os.path.exists(LOGO_PATH):
+        elements.append(RLImage(LOGO_PATH, width=6*cm, height=2*cm))
+        elements.append(Spacer(1, 0.3*cm))
+
+    CAT_LABELS = {
+        "electrical": "Electrical", "mechanical": "Mechanical",
+        "chiller": "Chiller", "panels_main": "Main Panels",
+        "panels_sub": "Sub Panels", "cooling_tower": "Cooling Tower",
+        "preventive": "Preventive",
+    }
+    cat_lbl = CAT_LABELS.get(category, "All Categories")
+    period  = (f"{date_from}  →  {date_to}" if (date_from and date_to)
+               else date_from or date_to or "All Time")
+    elements.append(Paragraph("Daily Inspection Report — All Equipment", title_st))
+    elements.append(Paragraph(
+        f"Category: {cat_lbl}   |   Period: {period}"
+        f"   |   Total Inspections: {len(items)}   |   Equipment Count: {len(groups)}",
+        sub_st,
+    ))
+    elements.append(Spacer(1, 0.3*cm))
+
+    # Summary table (one row per equipment)
+    name_col_w = PW_L - (0.7 + 2.5 + 2.5 + 2.0 + 2.5 + 2.0) * cm
+    sum_hdr = ["#", "Equipment #", "Name", "Type", "Inspections", "Last Date", "Pass %"]
+    sum_rows = []
+    for i, (tnum, insp_list) in enumerate(sorted(groups.items()), 1):
+        first = insp_list[0]
+        total_q  = sum(len(insp.get("answers", [])) for insp in insp_list)
+        total_p  = sum(_stats(insp)[1] for insp in insp_list)
+        pass_pct = f"{round(total_p / total_q * 100, 1)}%" if total_q else "—"
+        last_dt  = max(insp.get("created_at", "")[:10] for insp in insp_list)
+        ttype    = {"machine": "Machine", "chiller": "Chiller",
+                    "panel": "Panel", "cooling_tower": "CT"}.get(first.get("target_type", ""), "—")
+        sum_rows.append([
+            str(i), tnum,
+            (first.get("target_name") or "—")[:30],
+            ttype, str(len(insp_list)), last_dt, pass_pct,
+        ])
+    elements.append(_tbl(
+        sum_hdr, sum_rows,
+        [0.7*cm, 2.5*cm, name_col_w, 2.5*cm, 2.0*cm, 2.5*cm, 2.0*cm],
+        left_cols=(2,),
+    ))
+
+    # ── Per equipment detail pages ────────────────────────────────
+    CAT_SHORT = {
+        "electrical": "Elec", "mechanical": "Mech",
+        "chiller": "Chiller", "panels_main": "Panel-M",
+        "panels_sub": "Panel-S", "cooling_tower": "CT",
+        "preventive": "PM",
+    }
+    issues_col_w = PW_L - (2.5 + 2.5 + 4.0 + 1.5 + 1.5 + 1.5) * cm
+
+    for tnum, insp_list in sorted(groups.items()):
+        elements.append(PageBreak())
+        first = insp_list[0]
+        tname = first.get("target_name") or ""
+        ttype = {"machine": "Machine", "chiller": "Chiller",
+                 "panel": "Panel", "cooling_tower": "Cooling Tower"}.get(first.get("target_type", ""), "")
+        elements.append(Paragraph(
+            f"Equipment: {tnum}"
+            + (f"  —  {tname}" if tname else "")
+            + (f"   ({ttype})" if ttype else ""),
+            h2_st,
+        ))
+        elements.append(Spacer(1, 0.1*cm))
+
+        det_hdr = ["Date", "Category", "Technician", "Items", "Pass", "Fail", "Failure Notes"]
+        det_rows = []
+        for insp in sorted(insp_list, key=lambda x: x.get("created_at", "")):
+            total_q, passed, failed, notes = _stats(insp)
+            det_rows.append([
+                insp.get("created_at", "")[:10],
+                CAT_SHORT.get(insp.get("category", ""), insp.get("category", "")),
+                insp.get("technician_name", ""),
+                str(total_q), str(passed), str(failed),
+                notes or "—",
+            ])
+        elements.append(_tbl(
+            det_hdr, det_rows,
+            [2.5*cm, 2.5*cm, 4.0*cm, 1.5*cm, 1.5*cm, 1.5*cm, issues_col_w],
+            left_cols=(2, 6),
+        ))
+
+    pdfdoc.build(elements)
+    buf.seek(0)
+    safe_cat = cat_lbl.lower().replace(" ", "_")
+    date_part = f"{date_from or 'all'}_{date_to or 'all'}"
+    fname = f"inspections_{safe_cat}_{date_part}.pdf"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @api.get("/inspections/{iid}")
 async def get_inspection(iid: str, user=Depends(get_current_user)):
     doc = await db.inspections.find_one({"id": iid}, {"_id": 0})
