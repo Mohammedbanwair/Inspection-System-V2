@@ -1206,7 +1206,7 @@ async def export_excel(
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
-    def build_sheet(ws, insp_by_key, columns, col_label_fn, total_cols, panel_num=None):
+    def build_sheet(ws, insp_by_key, columns, col_label_fn, total_cols, panel_num=None, holiday_dates=None, sched_off_days=None):
         last_col = get_column_letter(total_cols)
         ws.sheet_view.showGridLines = False
         ws.column_dimensions["A"].width = 60
@@ -1284,12 +1284,25 @@ async def export_excel(
         qh.fill = PatternFill("solid", fgColor=HEADER_BG)
         qh.alignment = Alignment(horizontal="center", vertical="center")
         qh.border = cb(left=thick, right=thick, top=thick, bottom=thick)
+        def _is_off(col):
+            """Return True if col (a date object) is a weekly off day or official holiday."""
+            if IS_PANEL:
+                return False
+            ds = col.isoformat()
+            return (sched_off_days and col.weekday() in sched_off_days) or \
+                   (holiday_dates and ds in holiday_dates)
+
         for ci, col in enumerate(columns, start=2):
             cl = get_column_letter(ci)
             dc = ws[f"{cl}6"]
-            dc.value = col_label_fn(col)
-            dc.font = Font(name="Arial", bold=True, size=10, color=PURPLE)
-            dc.fill = PatternFill("solid", fgColor=DAY_BG)
+            if _is_off(col):
+                dc.value = col_label_fn(col)
+                dc.font = Font(name="Arial", bold=True, size=10, color="94A3B8")
+                dc.fill = PatternFill("solid", fgColor="CBD5E1")
+            else:
+                dc.value = col_label_fn(col)
+                dc.font = Font(name="Arial", bold=True, size=10, color=PURPLE)
+                dc.fill = PatternFill("solid", fgColor=DAY_BG)
             dc.alignment = Alignment(horizontal="center", vertical="center")
             dc.border = cb()
 
@@ -1308,6 +1321,14 @@ async def export_excel(
                 cl = get_column_letter(ci)
                 cell = ws[f"{cl}{row}"]
                 key = col if IS_PANEL else col.isoformat()
+                # Holiday / off day → N/A
+                if _is_off(col):
+                    cell.value = "N/A"
+                    cell.font = Font(name="Arial", bold=True, size=9, color="94A3B8")
+                    cell.fill = PatternFill("solid", fgColor="CBD5E1")
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = cb()
+                    continue
                 insp = insp_by_key.get(key)
                 cell_val = None
                 if insp:
@@ -1373,14 +1394,19 @@ async def export_excel(
         for ci, col in enumerate(columns, start=2):
             cl = get_column_letter(ci)
             cell = ws[f"{cl}{tr}"]
-            key = col if IS_PANEL else col.isoformat()
-            insp = insp_by_key.get(key)
-            if insp:
-                name = insp.get("technician_name", "")
-                initials = "".join(p[0].upper() for p in name.split() if p)
-                cell.value = initials
-                cell.font = Font(name="Arial", size=10, bold=True, color=PURPLE)
-            cell.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
+            if _is_off(col):
+                cell.value = "N/A"
+                cell.font = Font(name="Arial", size=9, bold=True, color="94A3B8")
+                cell.fill = PatternFill("solid", fgColor="CBD5E1")
+            else:
+                key = col if IS_PANEL else col.isoformat()
+                insp = insp_by_key.get(key)
+                if insp:
+                    name = insp.get("technician_name", "")
+                    initials = "".join(p[0].upper() for p in name.split() if p)
+                    cell.value = initials
+                    cell.font = Font(name="Arial", size=10, bold=True, color=PURPLE)
+                cell.fill = PatternFill("solid", fgColor=PURPLE_LIGHT)
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = cb(bottom=thick)
 
@@ -1388,6 +1414,12 @@ async def export_excel(
         ws.page_setup.orientation = "landscape"
         ws.page_setup.fitToPage = True
         ws.page_setup.fitToWidth = 1
+
+    # ── Fetch holidays + work schedule for N/A marking ──────────────────────
+    ws_doc      = await db.settings.find_one({"type": "work_schedule"}, {"_id": 0})
+    sched_off   = set(ws_doc.get("off_days", [])) if ws_doc else set()
+    hol_docs    = await db.settings.find({"type": "holiday"}, {"_id": 0}).to_list(1000)
+    hol_dates   = {h["date"] for h in hol_docs}
 
     # ── Build the sheet ──────────────────────────────────────────────────────
     if IS_PANEL:
@@ -1409,14 +1441,16 @@ async def export_excel(
                 wk = (d.day + fdom.weekday()) // 7 + 1
                 insp_by_week[f"week_{wk}"] = insp
             ws = wb.create_sheet(title=str(pnum)[:31])
-            build_sheet(ws, insp_by_week, weeks, lambda w, wl=week_labels: wl[w], len(weeks) + 1, panel_num=pnum)
+            build_sheet(ws, insp_by_week, weeks, lambda w, wl=week_labels: wl[w], len(weeks) + 1,
+                        panel_num=pnum, holiday_dates=hol_dates, sched_off_days=sched_off)
     else:
         days = [d_from + timedelta(i) for i in range((d_to - d_from).days + 1)]
         insp_by_date: dict = {}
         for insp in items:
             insp_by_date[insp["created_at"][:10]] = insp
         ws = wb.create_sheet(title=f"{target_number}"[:31])
-        build_sheet(ws, insp_by_date, days, lambda d: d.day, len(days) + 1)
+        build_sheet(ws, insp_by_date, days, lambda d: d.day, len(days) + 1,
+                    holiday_dates=hol_dates, sched_off_days=sched_off)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -1527,6 +1561,12 @@ async def export_all_inspections_pdf(
     }.get(target_type or "", "Machine")
     freq = "Weekly" if IS_PANEL else "Daily"
 
+    # Fetch holidays and off days for N/A marking
+    ws_sched_doc = await db.settings.find_one({"type": "work_schedule"}, {"_id": 0})
+    pdf_off_days = set(ws_sched_doc.get("off_days", [])) if ws_sched_doc else set()
+    pdf_hol_docs = await db.settings.find({"type": "holiday"}, {"_id": 0}).to_list(1000)
+    pdf_hol_dates = {h["date"] for h in pdf_hol_docs}
+
     if IS_PANEL:
         first_day  = date_cls(d_from.year, d_from.month, 1)
         nw = (cal_mod.monthrange(d_from.year, d_from.month)[1] + first_day.weekday()) // 7 + 1
@@ -1631,19 +1671,31 @@ async def export_all_inspections_pdf(
             ("BOTTOMPADDING", (0, 2), (-1, 2), 3),
         ]
 
+        HDR_ROWS = 4   # rows 0-3
+
+        C_HOL_BG = rl_colors.Color(0xCB/255, 0xD5/255, 0xE1/255)
+        C_HOL_FG = rl_colors.Color(0x94/255, 0xA3/255, 0xB8/255)
+        s_hol = _s("hol", fontSize=7, fontName="Helvetica-Bold", textColor=C_HOL_FG, alignment=TA_CENTER)
+
+        def _pdf_is_off(ck):
+            if IS_PANEL: return False
+            return (ck in pdf_hol_dates) or (date_cls.fromisoformat(ck).weekday() in pdf_off_days)
+
         # ── ROW 3: Column headers ─────────────────────────────────
         hdr_row = [Paragraph("Check Points", s_hdr)]
-        for ck in col_keys:
-            hdr_row.append(Paragraph(col_labels[ck] if IS_PANEL else col_labels[ck], s_day))
-        tbl_data.append(hdr_row)
         tbl_cmd += [
-            ("BACKGROUND", (0, 3), (0, 3),  C_HDR),
-            ("BACKGROUND", (1, 3), (-1, 3), C_DAY_BG),
+            ("BACKGROUND", (0, 3), (0, 3), C_HDR),
             ("TOPPADDING",    (0, 3), (-1, 3), 5),
             ("BOTTOMPADDING", (0, 3), (-1, 3), 5),
         ]
-
-        HDR_ROWS = 4   # rows 0-3
+        for ci2, ck2 in enumerate(col_keys):
+            if _pdf_is_off(ck2):
+                hdr_row.append(Paragraph(col_labels[ck2], s_hol))
+                tbl_cmd.append(("BACKGROUND", (ci2+1, 3), (ci2+1, 3), C_HOL_BG))
+            else:
+                hdr_row.append(Paragraph(col_labels[ck2], s_day))
+                tbl_cmd.append(("BACKGROUND", (ci2+1, 3), (ci2+1, 3), C_DAY_BG))
+        tbl_data.append(hdr_row)
 
         # ── ROWS 4…: Questions ────────────────────────────────────
         for qi, question in enumerate(questions_list):
@@ -1654,8 +1706,12 @@ async def export_all_inspections_pdf(
             tbl_cmd.append(("BACKGROUND", (0, row_idx), (0, row_idx), bg))
             for ci, ck in enumerate(col_keys):
                 col_idx  = ci + 1
+                if _pdf_is_off(ck):
+                    data_row.append(Paragraph("N/A", s_hol))
+                    tbl_cmd.append(("BACKGROUND", (col_idx, row_idx), (col_idx, row_idx), C_HOL_BG))
+                    continue
                 insp     = imap.get(ck)
-                cell_par = Paragraph("", s_q)   # default empty
+                cell_par = Paragraph("", s_q)
                 if insp:
                     ans_map = {(a.get("qid") or a.get("question_id")): a
                                for a in insp.get("answers", [])}
@@ -1685,13 +1741,18 @@ async def export_all_inspections_pdf(
         tech_ri  = HDR_ROWS + len(questions_list)
         tech_row = [Paragraph("Technician", s_hdr)]
         for ck in col_keys:
-            insp = imap.get(ck)
-            if insp:
-                name     = insp.get("technician_name", "")
-                initials = "".join(p[0].upper() for p in name.split() if p)
-                tech_row.append(Paragraph(initials, s_tech))
+            if _pdf_is_off(ck):
+                tech_row.append(Paragraph("N/A", s_hol))
+                tbl_cmd.append(("BACKGROUND", (col_keys.index(ck)+1, tech_ri),
+                                 (col_keys.index(ck)+1, tech_ri), C_HOL_BG))
             else:
-                tech_row.append(Paragraph("", s_tech))
+                insp = imap.get(ck)
+                if insp:
+                    name     = insp.get("technician_name", "")
+                    initials = "".join(p[0].upper() for p in name.split() if p)
+                    tech_row.append(Paragraph(initials, s_tech))
+                else:
+                    tech_row.append(Paragraph("", s_tech))
         tbl_data.append(tech_row)
         tbl_cmd += [
             ("BACKGROUND", (0, tech_ri),  (0, tech_ri),  C_HDR),
@@ -3690,6 +3751,30 @@ async def update_work_schedule(body: WorkScheduleBody, user=Depends(require_admi
         upsert=True,
     )
     return {"hours_per_day": body.hours_per_day, "off_days": body.off_days}
+
+
+# ---------- Official Holidays ----------
+class HolidayBody(BaseModel):
+    date: str           # YYYY-MM-DD
+    name: Optional[str] = ""
+
+@api.get("/settings/holidays")
+async def get_holidays(_=Depends(require_admin)):
+    docs = await db.settings.find({"type": "holiday"}, {"_id": 0}).sort("date", 1).to_list(500)
+    return docs
+
+@api.post("/settings/holidays")
+async def add_holiday(body: HolidayBody, _=Depends(require_admin)):
+    existing = await db.settings.find_one({"type": "holiday", "date": body.date})
+    if existing:
+        raise HTTPException(400, "هذا التاريخ محدد مسبقاً")
+    await db.settings.insert_one({"type": "holiday", "date": body.date, "name": body.name or ""})
+    return {"ok": True}
+
+@api.delete("/settings/holidays/{date}")
+async def delete_holiday(date: str, _=Depends(require_admin)):
+    await db.settings.delete_one({"type": "holiday", "date": date})
+    return {"ok": True}
 
 
 # ---------- Seed ----------
