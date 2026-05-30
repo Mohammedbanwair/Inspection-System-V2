@@ -1441,182 +1441,300 @@ async def export_all_inspections_pdf(
     date_to: Optional[str] = None,
     _=Depends(require_admin),
 ):
+    """Generate a multi-page PDF with one checklist page per machine,
+    matching the Excel layout: questions on rows, dates on columns, ✓/✗ marks."""
     _rl_check_export(request.client.host)
-    q: dict = {}
-    if category: q["category"] = category
-    if target_type: q["target_type"] = target_type
-    if date_from or date_to:
-        rng: dict = {}
-        if date_from: rng["$gte"] = date_from
-        if date_to: rng["$lte"] = date_to + "T23:59:59"
-        q["created_at"] = rng
+    if not date_from or not date_to:
+        raise HTTPException(400, "يجب تحديد نطاق التاريخ")
 
-    items = await db.inspections.find(q, {"_id": 0}).sort(
-        [("target_number", 1), ("created_at", -1)]
-    ).to_list(50000)
+    from datetime import date as date_cls, timedelta
+    import calendar as cal_mod
+
+    IS_PANEL = category in ("panels_main", "panels_sub")
+
+    q: dict = {}
+    if category:    q["category"]    = category
+    if target_type: q["target_type"] = target_type
+    q["created_at"] = {"$gte": date_from, "$lte": date_to + "T23:59:59"}
+
+    items = await db.inspections.find(q, {"_id": 0}).sort("created_at", 1).to_list(50000)
     if not items:
         raise HTTPException(404, "لا توجد بيانات للفترة المحددة")
 
-    # Group by target_number
-    groups: dict = {}
+    questions_list = await db.questions.find(
+        {"category": category} if category else {}, {"_id": 0}
+    ).sort([("category", 1), ("order", 1)]).to_list(2000)
+
+    # Group inspections by machine number
+    machine_groups: dict = {}
     for insp in items:
-        k = insp.get("target_number", "?")
-        groups.setdefault(k, []).append(insp)
+        machine_groups.setdefault(insp.get("target_number", "?"), []).append(insp)
 
-    def _stats(insp):
-        answers = insp.get("answers", [])
-        passed = sum(1 for a in answers if (a["a"] if "a" in a else a.get("answer", True)))
-        failed = len(answers) - passed
-        notes = "; ".join(
-            n for a in answers
-            if not (a["a"] if "a" in a else a.get("answer", True))
-            for n in [(a.get("n") or a.get("note") or "").strip()]
-            if n
-        )
-        return len(answers), passed, failed, notes[:90]
-
+    # ── ReportLab setup ──────────────────────────────────────────
     from reportlab.lib import colors as rl_colors
     from reportlab.lib.pagesizes import landscape as rl_landscape
     from reportlab.platypus import (
-        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+        SimpleDocTemplate, Table, TableStyle, Paragraph,
         PageBreak, Image as RLImage,
     )
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
-    LS = rl_landscape(A4)
-    PW_L = LS[0] - 3 * cm
+    LS   = rl_landscape(A4)
+    MARG = 1.0 * cm
+    PW   = LS[0] - 2 * MARG   # usable width in the landscape page
 
-    PURPLE_C = rl_colors.Color(0x6B/255, 0x2D/255, 0x6B/255)
-    HEADER_C = rl_colors.Color(0x4A/255, 0x14/255, 0x42/255)
-    LIGHT_C  = rl_colors.Color(0xF3/255, 0xE8/255, 0xF3/255)
+    C_PURPLE   = rl_colors.Color(0x6B/255, 0x2D/255, 0x6B/255)
+    C_HDR      = rl_colors.Color(0x4A/255, 0x14/255, 0x42/255)
+    C_P_LIGHT  = rl_colors.Color(0xF3/255, 0xE8/255, 0xF3/255)
+    C_DAY_BG   = rl_colors.Color(0xED/255, 0xE7/255, 0xF6/255)
+    C_G_BG     = rl_colors.Color(0xE8/255, 0xF5/255, 0xE9/255)
+    C_R_BG     = rl_colors.Color(0xFF/255, 0xEB/255, 0xEE/255)
+    C_G_FG     = rl_colors.Color(0x2E/255, 0x7D/255, 0x32/255)
+    C_R_FG     = rl_colors.Color(0xC6/255, 0x28/255, 0x28/255)
+    C_GREY_BG  = rl_colors.Color(0xE2/255, 0xE8/255, 0xF0/255)
+    C_GREY_FG  = rl_colors.Color(0x64/255, 0x74/255, 0x8B/255)
+    C_MO_BG    = rl_colors.Color(0x7B/255, 0x3F/255, 0x7B/255)
+    C_LINE     = rl_colors.Color(0.78, 0.78, 0.78)
 
-    styles = getSampleStyleSheet()
-    def _pst(name, **kw): return ParagraphStyle(name, parent=styles["Normal"], **kw)
-    title_st = _pst("tit", fontSize=17, textColor=PURPLE_C, spaceAfter=3, fontName="Helvetica-Bold")
-    h2_st    = _pst("h2",  fontSize=11, textColor=HEADER_C, spaceBefore=8, spaceAfter=3, fontName="Helvetica-Bold")
-    sub_st   = _pst("sub", fontSize=9,  textColor=rl_colors.grey, spaceAfter=8)
+    ST = getSampleStyleSheet()
+    def _s(name, **kw): return ParagraphStyle(name, parent=ST["Normal"], **kw)
+    s_title  = _s("ti",  fontSize=14, fontName="Helvetica-Bold", textColor=C_PURPLE, alignment=TA_CENTER, leading=18)
+    s_info   = _s("inf", fontSize=10, fontName="Helvetica-Bold", textColor=rl_colors.white, alignment=TA_LEFT, leading=13)
+    s_month  = _s("mo",  fontSize=9,  fontName="Helvetica-Bold", textColor=rl_colors.white, alignment=TA_CENTER)
+    s_hdr    = _s("hd",  fontSize=9,  fontName="Helvetica-Bold", textColor=rl_colors.white, alignment=TA_CENTER)
+    s_day    = _s("dy",  fontSize=8,  fontName="Helvetica-Bold", textColor=C_PURPLE,         alignment=TA_CENTER)
+    s_q      = _s("q",   fontSize=8,  fontName="Helvetica",      textColor=rl_colors.black,  alignment=TA_LEFT,   leading=10)
+    s_pass   = _s("pa",  fontSize=10, fontName="Helvetica-Bold", textColor=C_G_FG,            alignment=TA_CENTER)
+    s_fail   = _s("fa",  fontSize=10, fontName="Helvetica-Bold", textColor=C_R_FG,            alignment=TA_CENTER)
+    s_na     = _s("na",  fontSize=7,  fontName="Helvetica-Bold", textColor=C_GREY_FG,         alignment=TA_CENTER)
+    s_num    = _s("nu",  fontSize=8,  fontName="Helvetica-Bold", textColor=C_PURPLE,           alignment=TA_CENTER)
+    s_tech   = _s("te",  fontSize=8,  fontName="Helvetica-Bold", textColor=C_PURPLE,           alignment=TA_CENTER)
 
-    def _tbl(hdr, rows, cw, left_cols=()):
-        t = Table([hdr] + rows, colWidths=cw, repeatRows=1, hAlign="LEFT")
-        cmd = [
-            ("BACKGROUND",     (0, 0), (-1, 0),  HEADER_C),
-            ("TEXTCOLOR",      (0, 0), (-1, 0),  rl_colors.white),
-            ("FONTNAME",       (0, 0), (-1, 0),  "Helvetica-Bold"),
-            ("FONTSIZE",       (0, 0), (-1, 0),  9),
-            ("FONTNAME",       (0, 1), (-1, -1), "Helvetica"),
-            ("FONTSIZE",       (0, 1), (-1, -1), 8),
-            ("ALIGN",          (0, 0), (-1, -1), "CENTER"),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [rl_colors.white, LIGHT_C]),
-            ("GRID",           (0, 0), (-1, -1), 0.4, rl_colors.Color(0.78, 0.78, 0.78)),
-            ("BOX",            (0, 0), (-1, -1), 1.2, PURPLE_C),
-            ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING",     (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING",  (0, 0), (-1, -1), 4),
-        ]
-        for c in left_cols:
-            cmd.append(("ALIGN", (c, 1), (c, -1), "LEFT"))
-        t.setStyle(TableStyle(cmd))
-        return t
+    # ── Date / week column setup ─────────────────────────────────
+    d_from = date_cls.fromisoformat(date_from)
+    d_to   = date_cls.fromisoformat(date_to)
 
-    buf = io.BytesIO()
-    pdfdoc = SimpleDocTemplate(
-        buf, pagesize=LS,
-        leftMargin=1.5*cm, rightMargin=1.5*cm,
-        topMargin=1.5*cm, bottomMargin=1.5*cm,
-    )
-    elements = []
-
-    # ── Cover page ───────────────────────────────────────────────
-    LOGO_PATH = os.path.join(ROOT_DIR, "company_logo.jpeg")
-    if os.path.exists(LOGO_PATH):
-        elements.append(RLImage(LOGO_PATH, width=6*cm, height=2*cm))
-        elements.append(Spacer(1, 0.3*cm))
-
-    CAT_LABELS = {
+    cat_label  = {
         "electrical": "Electrical", "mechanical": "Mechanical",
-        "chiller": "Chiller", "panels_main": "Main Panels",
+        "chiller": "Chiller",       "panels_main": "Main Panels",
         "panels_sub": "Sub Panels", "cooling_tower": "Cooling Tower",
         "preventive": "Preventive",
-    }
-    cat_lbl = CAT_LABELS.get(category, "All Categories")
-    period  = (f"{date_from}  →  {date_to}" if (date_from and date_to)
-               else date_from or date_to or "All Time")
-    elements.append(Paragraph("Daily Inspection Report — All Equipment", title_st))
-    elements.append(Paragraph(
-        f"Category: {cat_lbl}   |   Period: {period}"
-        f"   |   Total Inspections: {len(items)}   |   Equipment Count: {len(groups)}",
-        sub_st,
-    ))
-    elements.append(Spacer(1, 0.3*cm))
+    }.get(category or "", "")
+    type_label = {
+        "machine": "Machine", "chiller": "Chiller",
+        "panel": "Panel",     "cooling_tower": "Cooling Tower",
+    }.get(target_type or "", "Machine")
+    freq = "Weekly" if IS_PANEL else "Daily"
 
-    # Summary table (one row per equipment)
-    name_col_w = PW_L - (0.7 + 2.5 + 2.5 + 2.0 + 2.5 + 2.0) * cm
-    sum_hdr = ["#", "Equipment #", "Name", "Type", "Inspections", "Last Date", "Pass %"]
-    sum_rows = []
-    for i, (tnum, insp_list) in enumerate(sorted(groups.items()), 1):
-        first = insp_list[0]
-        total_q  = sum(len(insp.get("answers", [])) for insp in insp_list)
-        total_p  = sum(_stats(insp)[1] for insp in insp_list)
-        pass_pct = f"{round(total_p / total_q * 100, 1)}%" if total_q else "—"
-        last_dt  = max(insp.get("created_at", "")[:10] for insp in insp_list)
-        ttype    = {"machine": "Machine", "chiller": "Chiller",
-                    "panel": "Panel", "cooling_tower": "CT"}.get(first.get("target_type", ""), "—")
-        sum_rows.append([
-            str(i), tnum,
-            (first.get("target_name") or "—")[:30],
-            ttype, str(len(insp_list)), last_dt, pass_pct,
-        ])
-    elements.append(_tbl(
-        sum_hdr, sum_rows,
-        [0.7*cm, 2.5*cm, name_col_w, 2.5*cm, 2.0*cm, 2.5*cm, 2.0*cm],
-        left_cols=(2,),
-    ))
+    if IS_PANEL:
+        first_day  = date_cls(d_from.year, d_from.month, 1)
+        nw = (cal_mod.monthrange(d_from.year, d_from.month)[1] + first_day.weekday()) // 7 + 1
+        col_keys   = [f"week_{i}" for i in range(1, nw + 1)]
+        col_labels = {f"week_{i}": f"Wk {i}" for i in range(1, nw + 1)}
+        Q_COL = 190.0
+        D_COL = (PW - Q_COL) / len(col_keys)
+    else:
+        days      = [d_from + timedelta(i) for i in range((d_to - d_from).days + 1)]
+        col_keys  = [d.isoformat() for d in days]
+        col_labels = {d.isoformat(): str(d.day) for d in days}
+        Q_COL = 160.0
+        D_COL = max((PW - Q_COL) / len(col_keys), 14.0)
 
-    # ── Per equipment detail pages ────────────────────────────────
-    CAT_SHORT = {
-        "electrical": "Elec", "mechanical": "Mech",
-        "chiller": "Chiller", "panels_main": "Panel-M",
-        "panels_sub": "Panel-S", "cooling_tower": "CT",
-        "preventive": "PM",
-    }
-    issues_col_w = PW_L - (2.5 + 2.5 + 4.0 + 1.5 + 1.5 + 1.5) * cm
+    col_widths = [Q_COL] + [D_COL] * len(col_keys)
 
-    for tnum, insp_list in sorted(groups.items()):
-        elements.append(PageBreak())
-        first = insp_list[0]
-        tname = first.get("target_name") or ""
-        ttype = {"machine": "Machine", "chiller": "Chiller",
-                 "panel": "Panel", "cooling_tower": "Cooling Tower"}.get(first.get("target_type", ""), "")
-        elements.append(Paragraph(
-            f"Equipment: {tnum}"
-            + (f"  —  {tname}" if tname else "")
-            + (f"   ({ttype})" if ttype else ""),
-            h2_st,
-        ))
-        elements.append(Spacer(1, 0.1*cm))
+    LOGO_PATH  = os.path.join(ROOT_DIR, "company_logo.jpeg")
+    LOGO_EXISTS = os.path.exists(LOGO_PATH)
 
-        det_hdr = ["Date", "Category", "Technician", "Items", "Pass", "Fail", "Failure Notes"]
-        det_rows = []
-        for insp in sorted(insp_list, key=lambda x: x.get("created_at", "")):
-            total_q, passed, failed, notes = _stats(insp)
-            det_rows.append([
-                insp.get("created_at", "")[:10],
-                CAT_SHORT.get(insp.get("category", ""), insp.get("category", "")),
-                insp.get("technician_name", ""),
-                str(total_q), str(passed), str(failed),
-                notes or "—",
-            ])
-        elements.append(_tbl(
-            det_hdr, det_rows,
-            [2.5*cm, 2.5*cm, 4.0*cm, 1.5*cm, 1.5*cm, 1.5*cm, issues_col_w],
-            left_cols=(2, 6),
-        ))
+    def _build_machine_table(tnum, insp_list):
+        # Map inspections to column keys
+        if IS_PANEL:
+            imap: dict = {}
+            for insp in insp_list:
+                d    = date_cls.fromisoformat(insp["created_at"][:10])
+                fdom = date_cls(d.year, d.month, 1)
+                wk   = (d.day + fdom.weekday()) // 7 + 1
+                imap[f"week_{wk}"] = insp
+        else:
+            imap = {insp["created_at"][:10]: insp for insp in insp_list}
+
+        tname    = (insp_list[0].get("target_name") or "") if insp_list else ""
+        n_cols   = len(col_keys)
+        tbl_data = []
+        tbl_cmd  = []
+
+        # ── ROW 0: Logo + Title ───────────────────────────────────
+        if LOGO_EXISTS:
+            logo_img = RLImage(LOGO_PATH, width=4*cm, height=1.4*cm)
+        else:
+            logo_img = ""
+        title_p = Paragraph(f"{freq} {cat_label} Inspection Checklist", s_title)
+        # Use a nested 2-cell table for logo + title in the title row
+        inner = Table([[logo_img, title_p]], colWidths=[4.5*cm, Q_COL + D_COL * n_cols - 4.5*cm])
+        inner.setStyle(TableStyle([
+            ("ALIGN",   (0,0), (0,0), "LEFT"),
+            ("ALIGN",   (1,0), (1,0), "CENTER"),
+            ("VALIGN",  (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING",    (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ]))
+        tbl_data.append([inner] + [""] * n_cols)
+        tbl_cmd += [
+            ("SPAN",       (0, 0), (-1, 0)),
+            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.white),
+            ("TOPPADDING",    (0, 0), (-1, 0), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 0),
+            ("LEFTPADDING",   (0, 0), (-1, 0), 0),
+            ("RIGHTPADDING",  (0, 0), (-1, 0), 0),
+        ]
+
+        # ── ROW 1: Info bar ───────────────────────────────────────
+        if IS_PANEL:
+            info_text = f"   Panel #: {tnum}     Section: {cat_label}     Period: {d_from.strftime('%B %Y')}"
+        else:
+            info_text = (f"   {type_label} #: {tnum}"
+                         + (f"  —  {tname}" if tname else "")
+                         + f"     Section: {cat_label}     "
+                         + f"Period: {d_from.strftime('%d %b %Y')} – {d_to.strftime('%d %b %Y')}")
+        tbl_data.append([Paragraph(info_text, s_info)] + [""] * n_cols)
+        tbl_cmd += [
+            ("SPAN",       (0, 1), (-1, 1)),
+            ("BACKGROUND", (0, 1), (-1, 1), C_HDR),
+            ("TOPPADDING",    (0, 1), (-1, 1), 5),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), 5),
+        ]
+
+        # ── ROW 2: Month/period header ────────────────────────────
+        month_row = [""] * (n_cols + 1)
+        if IS_PANEL:
+            month_row[1] = Paragraph(d_from.strftime("%B %Y"), s_month)
+            tbl_cmd += [
+                ("SPAN",       (1, 2), (-1, 2)),
+                ("BACKGROUND", (0, 2), (0, 2),  C_HDR),
+                ("BACKGROUND", (1, 2), (-1, 2), C_MO_BG),
+            ]
+        else:
+            mo_groups: dict = {}
+            for di, ck in enumerate(col_keys):
+                d_obj = date_cls.fromisoformat(ck)
+                mo_groups.setdefault((d_obj.year, d_obj.month), []).append(di + 1)
+            for (yr, mo), cidxs in mo_groups.items():
+                month_row[cidxs[0]] = Paragraph(date_cls(yr, mo, 1).strftime("%B %Y"), s_month)
+                tbl_cmd += [
+                    ("SPAN",       (cidxs[0], 2), (cidxs[-1], 2)),
+                    ("BACKGROUND", (cidxs[0], 2), (cidxs[-1], 2), C_MO_BG),
+                ]
+            tbl_cmd.append(("BACKGROUND", (0, 2), (0, 2), C_HDR))
+        tbl_data.append(month_row)
+        tbl_cmd += [
+            ("TOPPADDING",    (0, 2), (-1, 2), 3),
+            ("BOTTOMPADDING", (0, 2), (-1, 2), 3),
+        ]
+
+        # ── ROW 3: Column headers ─────────────────────────────────
+        hdr_row = [Paragraph("Check Points", s_hdr)]
+        for ck in col_keys:
+            hdr_row.append(Paragraph(col_labels[ck] if IS_PANEL else col_labels[ck], s_day))
+        tbl_data.append(hdr_row)
+        tbl_cmd += [
+            ("BACKGROUND", (0, 3), (0, 3),  C_HDR),
+            ("BACKGROUND", (1, 3), (-1, 3), C_DAY_BG),
+            ("TOPPADDING",    (0, 3), (-1, 3), 5),
+            ("BOTTOMPADDING", (0, 3), (-1, 3), 5),
+        ]
+
+        HDR_ROWS = 4   # rows 0-3
+
+        # ── ROWS 4…: Questions ────────────────────────────────────
+        for qi, question in enumerate(questions_list):
+            row_idx  = HDR_ROWS + qi
+            q_is_num = question.get("answer_type") == "numeric"
+            data_row = [Paragraph(question["text"][:85], s_q)]
+            bg = C_P_LIGHT if qi % 2 == 0 else rl_colors.white
+            tbl_cmd.append(("BACKGROUND", (0, row_idx), (0, row_idx), bg))
+            for ci, ck in enumerate(col_keys):
+                col_idx  = ci + 1
+                insp     = imap.get(ck)
+                cell_par = Paragraph("", s_q)   # default empty
+                if insp:
+                    ans_map = {(a.get("qid") or a.get("question_id")): a
+                               for a in insp.get("answers", [])}
+                    ans = ans_map.get(question["id"])
+                    if ans:
+                        if q_is_num:
+                            nv = ans["nv"] if "nv" in ans else ans.get("numeric_value")
+                            if nv is not None:
+                                cell_par = Paragraph(f"{nv}°C", s_num)
+                                tbl_cmd.append(("BACKGROUND", (col_idx, row_idx), (col_idx, row_idx), C_P_LIGHT))
+                        else:
+                            raw     = ans["a"] if "a" in ans else ans.get("answer")
+                            skipped = ans.get("sk") or ans.get("skipped")
+                            if skipped or raw is None:
+                                cell_par = Paragraph("N/A", s_na)
+                                tbl_cmd.append(("BACKGROUND", (col_idx, row_idx), (col_idx, row_idx), C_GREY_BG))
+                            elif raw:
+                                cell_par = Paragraph("OK", s_pass)
+                                tbl_cmd.append(("BACKGROUND", (col_idx, row_idx), (col_idx, row_idx), C_G_BG))
+                            else:
+                                cell_par = Paragraph("X", s_fail)
+                                tbl_cmd.append(("BACKGROUND", (col_idx, row_idx), (col_idx, row_idx), C_R_BG))
+                data_row.append(cell_par)
+            tbl_data.append(data_row)
+
+        # ── LAST ROW: Technician initials ─────────────────────────
+        tech_ri  = HDR_ROWS + len(questions_list)
+        tech_row = [Paragraph("Technician", s_hdr)]
+        for ck in col_keys:
+            insp = imap.get(ck)
+            if insp:
+                name     = insp.get("technician_name", "")
+                initials = "".join(p[0].upper() for p in name.split() if p)
+                tech_row.append(Paragraph(initials, s_tech))
+            else:
+                tech_row.append(Paragraph("", s_tech))
+        tbl_data.append(tech_row)
+        tbl_cmd += [
+            ("BACKGROUND", (0, tech_ri),  (0, tech_ri),  C_HDR),
+            ("BACKGROUND", (1, tech_ri),  (-1, tech_ri), C_P_LIGHT),
+            ("TOPPADDING",    (0, tech_ri), (-1, tech_ri), 4),
+            ("BOTTOMPADDING", (0, tech_ri), (-1, tech_ri), 4),
+        ]
+
+        # ── Global table styles ───────────────────────────────────
+        tbl_cmd += [
+            ("ALIGN",         (0, 0),       (-1, -1),      "CENTER"),
+            ("ALIGN",         (0, HDR_ROWS),(0, tech_ri-1), "LEFT"),
+            ("VALIGN",        (0, 0),       (-1, -1),      "MIDDLE"),
+            ("GRID",          (0, 0),       (-1, -1),       0.4, C_LINE),
+            ("BOX",           (0, 0),       (-1, -1),       1.5, C_PURPLE),
+            ("TOPPADDING",    (0, HDR_ROWS),(-1, tech_ri-1), 3),
+            ("BOTTOMPADDING", (0, HDR_ROWS),(-1, tech_ri-1), 3),
+            ("LEFTPADDING",   (0, HDR_ROWS),(0, tech_ri-1),  4),
+        ]
+
+        row_h = [22, 22, 16, 22] + [None] * len(questions_list) + [20]
+        tbl   = Table(tbl_data, colWidths=col_widths, rowHeights=row_h,
+                      repeatRows=HDR_ROWS, hAlign="LEFT")
+        tbl.setStyle(TableStyle(tbl_cmd))
+        return tbl
+
+    # ── Build PDF ────────────────────────────────────────────────
+    buf    = io.BytesIO()
+    pdfdoc = SimpleDocTemplate(
+        buf, pagesize=LS,
+        leftMargin=MARG, rightMargin=MARG,
+        topMargin=MARG,  bottomMargin=MARG,
+    )
+    elements = []
+    for i, (tnum, insp_list) in enumerate(sorted(machine_groups.items())):
+        if i > 0:
+            elements.append(PageBreak())
+        elements.append(_build_machine_table(tnum, insp_list))
 
     pdfdoc.build(elements)
     buf.seek(0)
-    safe_cat = cat_lbl.lower().replace(" ", "_")
-    date_part = f"{date_from or 'all'}_{date_to or 'all'}"
-    fname = f"inspections_{safe_cat}_{date_part}.pdf"
+    cat_safe  = (category or "all").replace("_", "-")
+    fname     = f"inspections_all_{cat_safe}_{date_from}_{date_to}.pdf"
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="application/pdf",
