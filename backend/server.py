@@ -1297,8 +1297,8 @@ async def export_excel(
             dc = ws[f"{cl}6"]
             if _is_off(col):
                 dc.value = col_label_fn(col)
-                dc.font = Font(name="Arial", bold=True, size=10, color="94A3B8")
-                dc.fill = PatternFill("solid", fgColor="CBD5E1")
+                dc.font = Font(name="Arial", bold=True, size=10, color="B45309")
+                dc.fill = PatternFill("solid", fgColor="FEF3C7")
             else:
                 dc.value = col_label_fn(col)
                 dc.font = Font(name="Arial", bold=True, size=10, color=PURPLE)
@@ -1324,8 +1324,8 @@ async def export_excel(
                 # Holiday / off day → N/A
                 if _is_off(col):
                     cell.value = "N/A"
-                    cell.font = Font(name="Arial", bold=True, size=9, color="94A3B8")
-                    cell.fill = PatternFill("solid", fgColor="CBD5E1")
+                    cell.font = Font(name="Arial", bold=True, size=9, color="B45309")
+                    cell.fill = PatternFill("solid", fgColor="FEF3C7")
                     cell.alignment = Alignment(horizontal="center", vertical="center")
                     cell.border = cb()
                     continue
@@ -1396,8 +1396,8 @@ async def export_excel(
             cell = ws[f"{cl}{tr}"]
             if _is_off(col):
                 cell.value = "N/A"
-                cell.font = Font(name="Arial", size=9, bold=True, color="94A3B8")
-                cell.fill = PatternFill("solid", fgColor="CBD5E1")
+                cell.font = Font(name="Arial", size=9, bold=True, color="B45309")
+                cell.fill = PatternFill("solid", fgColor="FEF3C7")
             else:
                 key = col if IS_PANEL else col.isoformat()
                 insp = insp_by_key.get(key)
@@ -1673,8 +1673,8 @@ async def export_all_inspections_pdf(
 
         HDR_ROWS = 4   # rows 0-3
 
-        C_HOL_BG = rl_colors.Color(0xCB/255, 0xD5/255, 0xE1/255)
-        C_HOL_FG = rl_colors.Color(0x94/255, 0xA3/255, 0xB8/255)
+        C_HOL_BG = rl_colors.Color(0xFE/255, 0xF3/255, 0xC7/255)
+        C_HOL_FG = rl_colors.Color(0xB4/255, 0x53/255, 0x09/255)
         s_hol = _s("hol", fontSize=7, fontName="Helvetica-Bold", textColor=C_HOL_FG, alignment=TA_CENTER)
 
         def _pdf_is_off(ck):
