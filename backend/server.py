@@ -1504,6 +1504,15 @@ async def export_all_inspections_pdf(
     for insp in items:
         machine_groups.setdefault(insp.get("target_number", "?"), []).append(insp)
 
+    # Fetch sort_order from machines/panels collection to match UI order
+    _coll = db.panels if IS_PANEL else db.machines
+    _meta = await _coll.find(
+        {"number": {"$in": list(machine_groups.keys())}},
+        {"_id": 0, "number": 1, "sort_order": 1},
+    ).to_list(2000)
+    _sort_map = {m["number"]: m.get("sort_order", 9999) for m in _meta}
+    _sorted_nums = sorted(machine_groups.keys(), key=lambda n: (_sort_map.get(n, 9999), n))
+
     # ── ReportLab setup ──────────────────────────────────────────
     from reportlab.lib import colors as rl_colors
     from reportlab.lib.pagesizes import landscape as rl_landscape
@@ -1787,7 +1796,8 @@ async def export_all_inspections_pdf(
         topMargin=MARG,  bottomMargin=MARG,
     )
     elements = []
-    for i, (tnum, insp_list) in enumerate(sorted(machine_groups.items())):
+    for i, tnum in enumerate(_sorted_nums):
+        insp_list = machine_groups[tnum]
         if i > 0:
             elements.append(PageBreak())
         elements.append(_build_machine_table(tnum, insp_list))
